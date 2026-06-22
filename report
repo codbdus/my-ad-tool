@@ -1,0 +1,121 @@
+import streamlit as st
+import pandas as pd
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+import openai  # AI 코멘트 작성을 위한 라이브러리
+
+# OpenAI API 키 설정 (스트림릿 Secret에 등록 권장)
+# openai.api_key = st.secrets["OPENAI_API_KEY"]
+
+# 1. 페이지 레이아웃 설정
+st.set_page_config(page_title="통합 광고 성과 자동화 대시보드", layout="wide")
+st.title("📊 통합 광고 성과 자동화 보고서 시스템")
+st.markdown("매체별 Raw 데이터를 업로드하면 구글 시트에 수식화되어 입력되고 AI 코멘트가 자동 생성됩니다.")
+
+# 2. 구글 시트 API 연동 함수
+@st.cache_resource
+def init_google_sheet():
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    # 깃허브 보관 시 creds.json 보안 주의 (Streamlit secrets 활용 권장)
+    creds = ServiceAccountCredentials.from_json_keyfile_name("creds.json", scope)
+    client = gspread.authorize(creds)
+    return client
+
+# 3. AI 코멘트 생성 함수
+def generate_ai_comment(media, metrics_summary):
+    prompt = f"""
+    당신은 뷰티/코스메틱 분야 전문 퍼포먼스 마케터입니다.
+    다음 {media} 매체의 최신 광고 성과 데이터를 바탕으로 구글 시트 보고서에 들어갈 핵심 요약 코멘트를 작성해주세요.
+    
+    [성과 데이터 요약]
+    {metrics_summary}
+    
+    [작성 가이드라인]
+    - 2~3줄 이내로 간결하고 전문적인 어조로 작성할 것.
+    - CPC, CTR, 소진 광고비, ROAS 변동 특이사항을 짚어줄 것.
+    - 행동 제안(예: 소재 교체 필요, 예산 방어 필요 등)을 포함할 것.
+    """
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return "AI 코멘트 생성 중 오류가 발생했습니다. (API 키 확인 필요)"
+
+# 4. 사이드바 - 매체 선택 및 파일 업로드
+st.sidebar.header("📌 매체 선택 및 데이터 업로드")
+media_type = st.sidebar.selectbox(
+    "광고 매체를 선택하세요",
+    ["네이버 SA", "네이버 GFA", "구글 Demand Gen / SA", "메타(Facebook)", "11번가 / G마켓"]
+)
+
+uploaded_file = st.sidebar.file_uploader(
+    f"[{media_type}] Raw 데이터 파일(CSV/XLSX)을 선택하세요", 
+    type=["csv", "xlsx"]
+)
+
+# 5. 메인 로직 실행
+if uploaded_file is not None:
+    # 파일 읽기
+    if uploaded_file.name.endswith('.csv'):
+        df = pd.read_csv(uploaded_file)
+    else:
+        df = pd.read_excel(uploaded_file)
+        
+    st.write(f"### 📥 업로드된 [{media_type}] 데이터 미리보기")
+    st.dataframe(df.head(10)) # 업로드된 데이터 상위 10개 노출
+    
+    # 간이 데이터 분석 요약 (AI 프롬프트용 수치 계산)
+    # 실제 파일 컬럼명에 맞게 매체별 매핑 필요
+    try:
+        total_spend = df['광고비'].sum() if '광고비' in df.columns else df['소진액'].sum()
+        total_clicks = df['클릭수'].sum() if '클릭수' in df.columns else 0
+        avg_ctr = df['클릭률'].mean() if '클릭률' in df.columns else 0
+        
+        metrics_summary = f"총 소진광고비: {total_spend:,.0f}원 / 총 클릭수: {total_clicks:,.0f}회 / 평균 CTR: {avg_ctr:.2f}%"
+    except:
+        metrics_summary = "데이터 업로드 완료 (기본 요약 정보를 추출하지 못했습니다. 컬럼명을 확인해주세요.)"
+
+    st.write("### 📈 데이터 요약")
+    st.info(metrics_summary)
+
+    # 6. 구글 시트 전송 버튼
+    if st.button("🚀 구글 시트 자동 기입 및 AI 코멘트 반영"):
+        with st.spinner("구글 시트에 데이터를 입력하고 AI 성과 분석을 진행 중입니다..."):
+            try:
+                client = init_google_sheet()
+                # 수정하신 구글 시트 URL 고정
+                sheet_url = "https://docs.google.com/spreadsheets/d/1CMNsIc2giLwUikzhYub5MRVOJFl_n9je-EOuu_gV63g/edit"
+                doc = client.open_by_url(sheet_url)
+                
+                # 'Summary' 시트 또는 각 매체별 전용 탭 선택
+                # 여기서는 예시로 Summary 탭을 선택하고 매체별 행 위치에 맞게 데이터를 매핑합니다.
+                ws = doc.worksheet("Summary")
+                
+                # [중요] 기존 수식이 걸려있는 셀(예: 잔액, 기간소요 등)을 건드리지 않고, 
+                # 데이터 입력이 필요한 정확한 행/열 위치를 지정하여 데이터를 업데이트합니다.
+                if "네이버 SA" in media_type:
+                    # 예시: 네이버 SA 소진광고비 입력 위치가 K12 셀이라면
+                    ws.update_acell('K12', total_spend)
+                    # AI 코멘트 입력 위치 (예: O12 셀)
+                    ai_comment = generate_ai_comment(media_type, metrics_summary)
+                    ws.update_acell('O12', ai_comment)
+                    
+                elif "네이버 GFA" in media_type:
+                    # 예시: 네이버 GFA 소진광고비 입력 위치가 K16 셀이라면
+                    ws.update_acell('K16', total_spend)
+                    ai_comment = generate_ai_comment(media_type, metrics_summary)
+                    ws.update_acell('O16', ai_comment)
+                
+                # 추가적인 구글, 메타 등 분기 처리 조건문 추가 가능
+                
+                st.success("🎯 구글 시트 데이터 전송 및 AI 코멘트 업데이트가 성공적으로 완료되었습니다!")
+                st.write("### 🤖 생성된 AI 코멘트 내용")
+                st.success(ai_comment)
+                
+            except Exception as e:
+                st.error(f"시트 연동 중 오류가 발생했습니다: {e}")
+                st.warning("힌트: 구글 서비스 계정 이메일(creds.json 안의 client_email)이 해당 구글 시트에 '편집자' 권한으로 초대되어 있는지 확인하세요.")
