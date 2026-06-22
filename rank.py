@@ -1,127 +1,123 @@
 import streamlit as st
 import pandas as pd
-import requests
-from bs4 import BeautifulSoup
 import time
+import hmac
+import hashlib
+import base64
+import requests
 from io import BytesIO
 
 # 웹사이트 기본 설정
-st.set_page_config(page_title="네이버 광고 순위 추적기 V3", layout="wide")
-st.title("🎯 네이버 파워링크/광고 실시간 노출 순위 추적기")
-st.markdown("입력하신 키워드로 네이버 PC/모바일의 **최상단 광고 영역(파워링크, 브랜드검색 등)**을 실시간 크롤링하여 우리 광고의 노출 순위를 추적합니다.")
+st.set_page_config(page_title="네이버 검색광고 대시보드 V4", layout="wide")
+st.title("🚀 네이버 검색광고 공식 API 연동 모니터링 도구")
+st.markdown("네이버 공식 API를 연결하여 차단 없이 **실시간 키워드 데이터 및 대시보드**를 조회합니다.")
 
 # 사이드바 설정창
 with st.sidebar:
-    st.header("⚙️ 설정")
-    input_keywords = st.text_input("분석할 키워드 (쉼표로 구분)", "뷰티디바이스, 메디큐브, 수분크림")
-    my_brand = st.text_input("우리 브랜드 이름 (체크용)", "메디큐브")
-    run_button = st.button("🚀 실시간 광고 순위 조회")
-
-# 네이버 광고 영역 크롤링 함수
-def fetch_naver_ad_rank(keywords, brand_name):
-    results = []
-    bar = st.progress(0)
-    status_text = st.empty()
+    st.header("🔐 네이버 API 인증 정보")
+    st.caption("네이버 검색광고 시스템 [도구 > API 관리]에서 확인 가능합니다.")
     
-    # 기기 위장용 헤더 설정
-    headers_pc = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
+    # 보안을 위해 마케터가 직접 입력하도록 세팅
+    cust_id = st.text_input("1. CUSTOMER_ID (고객 ID)", type="password")
+    api_key = st.text_input("2. API_KEY (라이선스 키)", type="password")
+    secret_key = st.text_input("3. SECRET_KEY (비밀키)", type="password")
+    
+    st.divider()
+    st.header("⚙️ 조회 설정")
+    input_keywords = st.text_input("분석할 키워드 (쉼표로 구분)", "뷰티디바이스, 수분크림")
+    run_button = st.button("📊 실시간 API 데이터 가져오기")
+
+# 네이버 API용 암호화 헤더 생성 함수
+def generate_signature(timestamp, method, uri, secret_key):
+    message = f"{timestamp}.{method}.{uri}"
+    hash_result = hmac.new(
+        bytes(secret_key, "utf-8"),
+        bytes(message, "utf-8"),
+        hashlib.sha256
+    ).digest()
+    return base64.b64encode(hash_result).decode("utf-8")
+
+# 네이버 키워드 데이터 조회 함수 (공식 API)
+def get_keyword_stats(keywords_list, cust_id, api_key, secret_key):
+    uri = "/keywordstats"
+    method = "GET"
+    
+    # 쉼표로 연결된 키워드 문자열 생성 (최대 5개씩 쪼개서 보내는 것이 안전하나 테스트용으로 연동)
+    kw_string = ",".join(keywords_list)
+    url = f"https://api.naver.com{uri}?keywords={kw_string}"
+    
+    timestamp = str(int(time.time() * 1000))
+    signature = generate_signature(timestamp, method, uri, secret_key)
+    
+    headers = {
+        "X-Timestamp": timestamp,
+        "X-API-KEY": api_key,
+        "X-Customer": str(cust_id),
+        "X-Signature": signature,
+        "Content-Type": "application/json"
     }
-    headers_mobile = {
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
-        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
-    }
-
-    for idx, kw in enumerate(keywords):
-        status_text.text(f"🔍 '{kw}' 광고 영역 분석 중... ({idx+1}/{len(keywords)})")
-        
-        # --- [1] PC 광고 크롤링 ---
-        pc_url = f"https://search.naver.com/search.naver?query={kw}"
-        pc_rank = "미노출"
-        try:
-            res_pc = requests.get(pc_url, headers=headers_pc, timeout=5)
-            soup_pc = BeautifulSoup(res_pc.text, "html.parser")
-            
-            ad_titles_pc = [t.text.strip() for t in soup_pc.select(".power_inner .lnk_tit, .nad_ad .lnk_tit, .ad_brand .title, .ad_brand .txt_box")]
-            ad_titles_pc = [t for t in ad_titles_pc if t]
-            
-            for i, title in enumerate(ad_titles_pc[:10]):
-                if brand_name.lower() in title.lower():
-                    pc_rank = f"광고 {i+1}위"
-                    break
-        except Exception as e:
-            pc_rank = "오류 발생"
-            
-        time.sleep(0.6)
-        
-        # --- [2] 모바일 광고 크롤링 ---
-        mobile_url = f"https://m.search.naver.com/search.naver?query={kw}"
-        mobile_rank = "미노출"
-        try:
-            res_mo = requests.get(mobile_url, headers=headers_mobile, timeout=5)
-            soup_mo = BeautifulSoup(res_mo.text, "html.parser")
-            
-            ad_titles_mo = [t.text.strip() for t in soup_mo.select(".nad_ad .name, .nad_ad .ad_tit, .brand_search .title, .brand_search .txt_box")]
-            ad_titles_mo = [t for t in ad_titles_mo if t]
-            
-            for i, title in enumerate(ad_titles_mo[:10]):
-                if brand_name.lower() in title.lower():
-                    mobile_rank = f"광고 {i+1}위"
-                    break
-        except Exception as e:
-            mobile_rank = "오류 발생"
-
-        results.append({
-            "키워드": kw,
-            "🖥️ PC 광고 순위": pc_rank,
-            "📱 모바일 광고 순위": mobile_rank,
-            "조회 시간": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
-        })
-        
-        bar.progress(int((idx + 1) / len(keywords) * 100))
-        time.sleep(0.6)
-
-    status_text.text("✅ 광고 순위 조회가 완료되었습니다!")
-    return pd.DataFrame(results)
+    
+    try:
+        res = requests.get(url, headers=headers, timeout=10)
+        if res.status_code == 200:
+            data = res.json()
+            return pd.DataFrame(data.get("keywordList", []))
+        else:
+            st.error(f"❌ 네이버 API 통신 실패 (에러코드: {res.status_code})")
+            st.caption(res.text)
+            return None
+    except Exception as e:
+        st.error(f"⚠️ 연결 중 오류 발생: {e}")
+        return None
 
 # 실행 버튼 클릭 시
 if run_button:
-    if not my_brand:
-        st.error("⚠️ '우리 브랜드 이름'을 입력해 주세요!")
+    if not (cust_id and api_key and secret_key):
+        st.error("⚠️ 네이버 API 인증 정보 3가지를 모두 입력해 주세요!")
     else:
         kw_list = [k.strip() for k in input_keywords.split(",")]
-        df_result = fetch_naver_ad_rank(kw_list, my_brand)
         
-        st.subheader("📊 실시간 광고(파워링크/브랜드검색) 노출 현황")
-        st.dataframe(df_result, use_container_width=True)
-        
-        st.subheader("💡 실시간 입찰가 조정 가이드")
-        for index, row in df_result.iterrows():
-            kw = row["키워드"]
-            pc = row["🖥️ PC 광고 순위"]
-            mo = row["📱 모바일 광고 순위"]
+        with st.spinner("🔄 네이버 공식 광고 서버에서 데이터를 안전하게 가져오는 중..."):
+            df_result = get_keyword_stats(kw_list, cust_id, api_key, secret_key)
             
-            st.markdown(f"**📍 [{kw}] 광고 전략 가이드**")
+        if df_result is not None and not df_result.empty:
+            # 한글 컬럼명 매핑으로 가독성 확보
+            df_result = df_result.rename(columns={
+                'relKeyword': '키워드',
+                'monthlyPcQcCnt': '월간 PC 검색수',
+                'monthlyMobileQcCnt': '월간 모바일 검색수',
+                'monthlyAvePcClkCnt': '월간 PC 평균 클릭수',
+                'monthlyAveMobileClkCnt': '월간 모바일 평균 클릭수',
+                'monthlyAvePcCtr': 'PC 평균 CTR (%)',
+                'monthlyAveMobileCtr': '모바일 평균 CTR (%)'
+            })
             
-            if "1위" in mo or "2위" in mo:
-                st.success(f"🟢 **모바일 {mo} 노출 중:** 최상위권을 잘 방어하고 있습니다. 현재 입찰가를 유지하며 CPC 비용 효율을 모니터링하세요.")
-            elif "3위" in mo or "4위" in mo:
-                st.warning(f"🟡 **모바일 {mo} 노출 중:** 경쟁사에 밀려 순위가 조금 떨어졌습니다. 노출 증대를 위해 **모바일 입찰가 가중치를 5~10% 상향**하는 것을 검토하세요.")
-            elif mo == "미노출":
-                st.error(f"🔴 **모바일 미노출:** 모바일 광고 탭(상위 10위 안)에서 우리 브랜드가 보이지 않습니다. **입찰가를 과감히 올리거나 순위 경쟁 재진입**이 필요합니다.")
+            st.subheader("📊 실시간 매체 데이터 대시보드")
+            st.dataframe(df_result, use_container_width=True)
+            
+            # 퍼포먼스 마케터용 인사이트 자동 매칭
+            st.subheader("💡 채널별 타겟팅 가이드")
+            for index, row in df_result.iterrows():
+                kw = row["키워드"]
+                # 문자열로 들어오는 데이터를 숫자로 변환 처리 (에러 방지)
+                pc_search = int(str(row['월간 PC 검색수']).replace('<', '').strip()) if isinstance(row['월간 PC 검색수'], (int, float, str)) else 0
+                mo_search = int(str(row['월간 모바일 검색수']).replace('<', '').strip()) if isinstance(row['월간 모바일 검색수'], (int, float, str)) else 0
                 
-            st.write("---")
-            
-        # 엑셀 다운로드 파일 생성 및 설정
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            df_result.to_excel(writer, sheet_name='광고_순위_리포트', index=False)
-            
-        st.write("")
-        st.download_button(
-            label="📄 광고 순위 리포트 다운로드",
-            data=output.getvalue(),
-            file_name=f"naver_ad_ranking_{pd.Timestamp.now().strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd.ms-excel"
-        )
+                st.markdown(f"**📍 [{kw}] 매체 가치 분석**")
+                if mo_search > pc_search * 3:
+                    st.info(f"📱 모바일 검색 비중이 PC보다 **압도적으로 높습니다** (모바일 {mo_search:,}건 / PC {pc_search:,}건). 예산 배정을 모바일에 80% 이상 집중하세요.")
+                else:
+                    st.success(f"🖥️ PC와 모바일 밸런스가 좋습니다 (모바일 {mo_search:,}건 / PC {pc_search:,}건). 두 채널 모두 순위 방어가 필요합니다.")
+                st.write("---")
+                
+            # 엑셀 다운로드
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df_result.to_excel(writer, sheet_name='네이버_API_리포트', index=False)
+                
+            st.download_button(
+                label="📄 API 원본 리포트 다운로드",
+                data=output.getvalue(),
+                file_name=f"naver_api_report_{pd.Timestamp.now().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.ms-excel"
+            )
