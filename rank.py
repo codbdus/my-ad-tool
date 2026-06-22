@@ -8,16 +8,15 @@ import requests
 from io import BytesIO
 
 # 웹사이트 기본 설정
-st.set_page_config(page_title="네이버 검색광고 대시보드 V4", layout="wide")
+st.set_page_config(page_title="네이버 검색광고 대시보드 V5", layout="wide")
 st.title("🚀 네이버 검색광고 공식 API 연동 모니터링 도구")
 st.markdown("네이버 공식 API를 연결하여 차단 없이 **실시간 키워드 데이터 및 대시보드**를 조회합니다.")
 
 # 사이드바 설정창
 with st.sidebar:
     st.header("🔐 네이버 API 인증 정보")
-    st.caption("네이버 검색광고 시스템 [도구 > API 관리]에서 확인 가능합니다.")
+    st.caption("네이버 검색광고 시스템 [도구 > SA API 사용 관리]에서 확인 가능합니다.")
     
-    # 보안을 위해 마케터가 직접 입력하도록 세팅
     cust_id = st.text_input("1. CUSTOMER_ID (고객 ID)", type="password")
     api_key = st.text_input("2. API_KEY (라이선스 키)", type="password")
     secret_key = st.text_input("3. SECRET_KEY (비밀키)", type="password")
@@ -37,14 +36,18 @@ def generate_signature(timestamp, method, uri, secret_key):
     ).digest()
     return base64.b64encode(hash_result).decode("utf-8")
 
-# 네이버 키워드 데이터 조회 함수 (공식 API)
+# 네이버 키워드 데이터 조회 함수 (공식 API 최신 보완 버전)
 def get_keyword_stats(keywords_list, cust_id, api_key, secret_key):
+    # URI는 순수 경로만 포함하고, 파라미터는 따로 전달하는 구조가 안전합니다.
     uri = "/keywordstats"
     method = "GET"
     
-    # 쉼표로 연결된 키워드 문자열 생성 (최대 5개씩 쪼개서 보내는 것이 안전하나 테스트용으로 연동)
+    # 쉼표로 연결된 키워드 문자열 생성
     kw_string = ",".join(keywords_list)
-    url = f"https://api.naver.com{uri}?keywords={kw_string}"
+    
+    # 실제 요청 주소 (네이버 API 기본 도메인)
+    base_url = "https://api.naver.com"
+    request_url = f"{base_url}{uri}"
     
     timestamp = str(int(time.time() * 1000))
     signature = generate_signature(timestamp, method, uri, secret_key)
@@ -57,14 +60,20 @@ def get_keyword_stats(keywords_list, cust_id, api_key, secret_key):
         "Content-Type": "application/json"
     }
     
+    # 파라미터를 params 인자로 명확히 분리하여 404 에러 방지
+    params = {
+        "keywords": kw_string
+    }
+    
     try:
-        res = requests.get(url, headers=headers, timeout=10)
+        res = requests.get(request_url, headers=headers, params=params, timeout=10)
         if res.status_code == 200:
             data = res.json()
             return pd.DataFrame(data.get("keywordList", []))
         else:
             st.error(f"❌ 네이버 API 통신 실패 (에러코드: {res.status_code})")
-            st.caption(res.text)
+            st.info("💡 Tip: 404 에러가 지속된다면 발급받으신 API 계정정보(고객ID 등)에 공백이나 오타가 들어갔는지 혹은 '서비스 신청' 처리가 완전히 반영되었는지 확인해 보세요.")
+            st.caption(f"상세 에러 내용: {res.text}")
             return None
     except Exception as e:
         st.error(f"⚠️ 연결 중 오류 발생: {e}")
@@ -99,9 +108,16 @@ if run_button:
             st.subheader("💡 채널별 타겟팅 가이드")
             for index, row in df_result.iterrows():
                 kw = row["키워드"]
-                # 문자열로 들어오는 데이터를 숫자로 변환 처리 (에러 방지)
-                pc_search = int(str(row['월간 PC 검색수']).replace('<', '').strip()) if isinstance(row['월간 PC 검색수'], (int, float, str)) else 0
-                mo_search = int(str(row['월간 모바일 검색수']).replace('<', '').strip()) if isinstance(row['월간 모바일 검색수'], (int, float, str)) else 0
+                
+                # 데이터 정제 및 예외 처리
+                try:
+                    pc_search = int(str(row['월간 PC 검색수']).replace('<', '').replace(',', '').strip())
+                except:
+                    pc_search = 0
+                try:
+                    mo_search = int(str(row['월간 모바일 검색수']).replace('<', '').replace(',', '').strip())
+                except:
+                    mo_search = 0
                 
                 st.markdown(f"**📍 [{kw}] 매체 가치 분석**")
                 if mo_search > pc_search * 3:
