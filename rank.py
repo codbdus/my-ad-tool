@@ -43,11 +43,7 @@ def fetch_naver_ad_rank(keywords, brand_name):
             res_pc = requests.get(pc_url, headers=headers_pc, timeout=5)
             soup_pc = BeautifulSoup(res_pc.text, "html.parser")
             
-            # 파워링크 광고 제목 및 브랜드검색 타이틀 태그 타겟팅
-            # 네이버 PC 파워링크 타이틀(.lnk_tit), 브랜드검색(.title, .txt_box)
             ad_titles_pc = [t.text.strip() for t in soup_pc.select(".power_inner .lnk_tit, .nad_ad .lnk_tit, .ad_brand .title, .ad_brand .txt_box")]
-            
-            # 중복 제거 및 빈 텍스트 정리
             ad_titles_pc = [t for t in ad_titles_pc if t]
             
             for i, title in enumerate(ad_titles_pc[:10]):
@@ -57,7 +53,7 @@ def fetch_naver_ad_rank(keywords, brand_name):
         except Exception as e:
             pc_rank = "오류 발생"
             
-        time.sleep(0.6) # 차단 방지 매너 타임
+        time.sleep(0.6)
         
         # --- [2] 모바일 광고 크롤링 ---
         mobile_url = f"https://m.search.naver.com/search.naver?query={kw}"
@@ -66,7 +62,6 @@ def fetch_naver_ad_rank(keywords, brand_name):
             res_mo = requests.get(mobile_url, headers=headers_mobile, timeout=5)
             soup_mo = BeautifulSoup(res_mo.text, "html.parser")
             
-            # 모바일 파워링크(.inner .name, .ad_tit) 및 브랜드검색 타겟팅
             ad_titles_mo = [t.text.strip() for t in soup_mo.select(".nad_ad .name, .nad_ad .ad_tit, .brand_search .title, .brand_search .txt_box")]
             ad_titles_mo = [t for t in ad_titles_mo if t]
             
@@ -101,7 +96,6 @@ if run_button:
         st.subheader("📊 실시간 광고(파워링크/브랜드검색) 노출 현황")
         st.dataframe(df_result, use_container_width=True)
         
-        # 입찰가 조정을 위한 마케팅 액션 가이드
         st.subheader("💡 실시간 입찰가 조정 가이드")
         for index, row in df_result.iterrows():
             kw = row["키워드"]
@@ -119,13 +113,15 @@ if run_button:
                 
             st.write("---")
             
-        # 엑셀 다운로드
+        # 엑셀 다운로드 파일 생성 및 설정
         output = BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             df_result.to_excel(writer, sheet_name='광고_순위_리포트', index=False)
             
+        st.write("")
         st.download_button(
             label="📄 광고 순위 리포트 다운로드",
             data=output.getvalue(),
             file_name=f"naver_ad_ranking_{pd.Timestamp.now().strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd
+            mime="application/vnd.ms-excel"
+        )
