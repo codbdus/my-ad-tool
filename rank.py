@@ -26,11 +26,9 @@ with st.sidebar:
     input_keywords = st.text_input("분석할 키워드 (쉼표로 구분)", "뷰티디바이스, 수분크림")
     run_button = st.button("📊 실시간 API 데이터 가져오기")
 
-# [🔥 핵심 수정] 네이버 공식 문서 표준 스펙 가이드에 맞춘 서명 생성 로직
+# [🔥 초정밀 수정] 초(Second) 단위 타임스탬프 반영 및 바이트 서명 조립
 def make_signature(timestamp, method, uri, secret_key):
-    # 네이버 공식 API 규칙: 메시지 조립 시 점('.')이 아니라 줄바꿈('\n')을 사용해야 합니다.
     message = f"{timestamp}\n{method}\n{uri}"
-    
     secret_bytes = bytes(secret_key.strip(), 'utf-8')
     message_bytes = bytes(message, 'utf-8')
     
@@ -43,17 +41,17 @@ def get_keyword_stats(keywords_list, cust_id, api_key, secret_key):
     method = "GET"
     request_url = f"https://api.naver.com{pure_uri}"
     
-    # 입력값 공백 제거 및 패키징
     clean_cust_id = str(cust_id).strip()
     clean_api_key = str(api_key).strip()
     clean_secret_key = str(secret_key).strip()
     
-    # API 요청을 생성하는 시점의 타임스탬프 고정
-    current_timestamp = str(int(time.time() * 1000))
+    # [⚠️ 핵심 변경] 밀리초(*1000)가 아닌 초(10자리 숫자의 문자열) 단위 고정
+    current_timestamp = str(int(time.time()))
     
-    # 수정된 서명 함수 호출
+    # 서명 발급
     signature = make_signature(current_timestamp, method, pure_uri, clean_secret_key)
     
+    # 네이버 게이트웨이 표준 헤더 순서 맵핑
     headers = {
         "X-Timestamp": current_timestamp,
         "X-API-KEY": clean_api_key,
@@ -76,7 +74,7 @@ def get_keyword_stats(keywords_list, cust_id, api_key, secret_key):
         else:
             st.error(f"❌ 네이버 API 통신 실패 (에러코드: {res.status_code})")
             st.warning("⚠️ 서버 응답 원본 확인:")
-            st.code(f"Status Code: {res.status_code}\nResponse Text: {res.text if res.text else '네이버가 암호화 헤더 불일치로 신호를 차단했습니다. 키 정보에 공백이 없는지 다시 확인해 주세요.'}")
+            st.code(f"Status Code: {res.status_code}\nResponse Text: {res.text if res.text else '네이버 보안 필터가 암호화 형식을 거절함. 타임스탬프 단위를 대조해 주세요.'}")
             return None
     except Exception as e:
         st.error(f"⚠️ 연결 중 오류 발생: {e}")
