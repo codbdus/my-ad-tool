@@ -1,5 +1,6 @@
 streamlit
 pandas
-beautifulsoup4
-requests
-xlsxwriter
+openpyxl
+gspread
+google-auth
+openai==0.28
