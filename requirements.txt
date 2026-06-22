@@ -1,6 +1,4 @@
 streamlit
 pandas
+plotly
 openpyxl
-gspread
-google-auth
-openai==0.28
