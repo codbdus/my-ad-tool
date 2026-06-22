@@ -8,7 +8,7 @@ import requests
 from io import BytesIO
 
 # 웹사이트 기본 설정
-st.set_page_config(page_title="네이버 검색광고 대시보드 V8", layout="wide")
+st.set_page_config(page_title="네이버 검색광고 대시보드 최종형", layout="wide")
 st.title("🚀 네이버 검색광고 공식 API 연동 모니터링 도구")
 st.markdown("네이버 공식 API를 연결하여 차단 없이 **실시간 키워드 데이터 및 대시보드**를 조회합니다.")
 
@@ -26,8 +26,9 @@ with st.sidebar:
     input_keywords = st.text_input("분석할 키워드 (쉼표로 구분)", "뷰티디바이스, 수분크림")
     run_button = st.button("📊 실시간 API 데이터 가져오기")
 
-# 네이버 API용 암호화 헤더 생성 함수 (정밀 매칭)
+# [⚠️ 핵심 수정] 네이버 공식 문서 규격에 맞춘 순수 URI 서명 생성 함수
 def generate_signature(timestamp, method, uri, secret_key):
+    # 파라미터(?keywords=...)를 제외한 순수 경로만 message에 들어가야 인증이 통과됩니다.
     message = f"{timestamp}.{method}.{uri}"
     hash_result = hmac.new(
         bytes(secret_key.strip(), "utf-8"),
@@ -36,23 +37,24 @@ def generate_signature(timestamp, method, uri, secret_key):
     ).digest()
     return base64.b64encode(hash_result).decode("utf-8")
 
-# 네이버 키워드 데이터 조회 함수 (서명 에러 전면 수정)
+# 네이버 키워드 데이터 조회 함수
 def get_keyword_stats(keywords_list, cust_id, api_key, secret_key):
-    # 공백 제거
+    # 서명용 순수 URI 경로와 실제 요청 URL을 완벽하게 분리합니다.
+    pure_uri = "/ncc/keywordstats"
+    method = "GET"
+    request_url = f"https://api.naver.com{pure_uri}"
+    
+    # 공백 제거 및 키워드 리스트 정제
     clean_cust_id = str(cust_id).strip()
     clean_api_key = str(api_key).strip()
     clean_secret_key = str(secret_key).strip()
-    
-    # 쉼표 및 공백 정리하여 키워드 매칭
     kw_string = ",".join([k.strip() for k in keywords_list])
     
-    # [핵심] 네이버 규격 가이드에 맞춰 URI 파라미터까지 명확히 명시
-    uri = f"/ncc/keywordstats?keywords={kw_string}"
-    method = "GET"
-    request_url = f"https://api.naver.com{uri}"
-    
+    # 현재 시간 타임스탬프 (밀리초 단위)
     timestamp = str(int(time.time() * 1000))
-    signature = generate_signature(timestamp, method, uri, clean_secret_key)
+    
+    # 순수 URI를 이용하여 시그니처 발행 (404 원인 해결)
+    signature = generate_signature(timestamp, method, pure_uri, clean_secret_key)
     
     headers = {
         "X-Timestamp": timestamp,
@@ -62,9 +64,14 @@ def get_keyword_stats(keywords_list, cust_id, api_key, secret_key):
         "Content-Type": "application/json"
     }
     
+    # 네이버가 요구하는 파라미터 구조 정의
+    params = {
+        "keywords": kw_string
+    }
+    
     try:
-        # 패러미터를 분리하지 않고 동기화된 URL로 직접 요청하여 404 차단 우회
-        res = requests.get(request_url, headers=headers, timeout=10)
+        # 데이터 요청 시 params 인자를 통해 안전하게 전달
+        res = requests.get(request_url, headers=headers, params=params, timeout=10)
         
         if res.status_code == 200:
             data = res.json()
@@ -102,7 +109,7 @@ if run_button:
             st.subheader("📊 실시간 매체 데이터 대시보드")
             st.dataframe(df_result, use_container_width=True)
             
-            # 퍼포먼스 마케터용 인사이트 자동 분석
+            # 마케터용 자동 매체 분석 시스템
             st.subheader("💡 채널별 타겟팅 가이드")
             for index, row in df_result.iterrows():
                 kw = row["키워드"]
@@ -122,7 +129,7 @@ if run_button:
                     st.success(f"🖥️ PC와 모바일 밸런스가 좋습니다 (모바일 {mo_search:,}건 / PC {pc_search:,}건). 두 매체 모두 모니터링이 필요합니다.")
                 st.write("---")
                 
-            # 엑셀 다운로드
+            # 엑셀 다운로드 기능
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_result.to_excel(writer, sheet_name='네이버_API_리포트', index=False)
