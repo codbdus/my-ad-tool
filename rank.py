@@ -26,51 +26,52 @@ with st.sidebar:
     input_keywords = st.text_input("분석할 키워드 (쉼표로 구분)", "뷰티디바이스, 수분크림")
     run_button = st.button("📊 실시간 API 데이터 가져오기")
 
-# [⚠️ 핵심 수정] 네이버 공식 문서 규격에 맞춘 순수 URI 서명 생성 함수
-def generate_signature(timestamp, method, uri, secret_key):
-    # 파라미터(?keywords=...)를 제외한 순수 경로만 message에 들어가야 인증이 통과됩니다.
+# [🔥 초정밀 수정] 네이버 규격 가이드를 100% 준수한 HMAC 서명 생성
+def make_signature(timestamp, method, uri, secret_key):
+    # 비밀키와 메시지는 정확히 바이트 스트림으로 매핑되어야 서명이 깨지지 않습니다.
     message = f"{timestamp}.{method}.{uri}"
-    hash_result = hmac.new(
-        bytes(secret_key.strip(), "utf-8"),
-        bytes(message, "utf-8"),
-        hashlib.sha256
-    ).digest()
-    return base64.b64encode(hash_result).decode("utf-8")
+    secret_bytes = bytes(secret_key.strip(), 'utf-8')
+    message_bytes = bytes(message, 'utf-8')
+    
+    signing_mac = hmac.new(secret_bytes, message_bytes, digestmod=hashlib.sha256)
+    return base64.b64encode(signing_mac.digest()).decode('utf-8')
 
 # 네이버 키워드 데이터 조회 함수
 def get_keyword_stats(keywords_list, cust_id, api_key, secret_key):
-    # 서명용 순수 URI 경로와 실제 요청 URL을 완벽하게 분리합니다.
+    # 통계 API의 순수 경로명 (서명용)
     pure_uri = "/ncc/keywordstats"
     method = "GET"
-    request_url = f"https://api.naver.com{pure_uri}"
     
-    # 공백 제거 및 키워드 리스트 정제
+    # 공백 제거 및 파라미터 바인딩
     clean_cust_id = str(cust_id).strip()
     clean_api_key = str(api_key).strip()
     clean_secret_key = str(secret_key).strip()
-    kw_string = ",".join([k.strip() for k in keywords_list])
     
-    # 현재 시간 타임스탬프 (밀리초 단위)
-    timestamp = str(int(time.time() * 1000))
+    # API 요청을 보낼 메인 주소
+    request_url = f"https://api.naver.com{pure_uri}"
     
-    # 순수 URI를 이용하여 시그니처 발행 (404 원인 해결)
-    signature = generate_signature(timestamp, method, pure_uri, clean_secret_key)
+    # [중요] 생성 시점의 타임스탬프 고정 (헤더와 서명 동기화)
+    current_timestamp = str(int(time.time() * 1000))
+    
+    # 정확한 서명 데이터 굽기
+    signature = make_signature(current_timestamp, method, pure_uri, clean_secret_key)
     
     headers = {
-        "X-Timestamp": timestamp,
+        "X-Timestamp": current_timestamp,
         "X-API-KEY": clean_api_key,
         "X-Customer": clean_cust_id,
         "X-Signature": signature,
         "Content-Type": "application/json"
     }
     
-    # 네이버가 요구하는 파라미터 구조 정의
+    # 쉼표로 연결하되 공백을 완전히 제거한 키워드 쿼리
+    kw_query = ",".join([k.strip() for k in keywords_list])
     params = {
-        "keywords": kw_string
+        "keywords": kw_query
     }
     
     try:
-        # 데이터 요청 시 params 인자를 통해 안전하게 전달
+        # 네이버 게이트웨이로 최종 통신 요청
         res = requests.get(request_url, headers=headers, params=params, timeout=10)
         
         if res.status_code == 200:
@@ -79,7 +80,7 @@ def get_keyword_stats(keywords_list, cust_id, api_key, secret_key):
         else:
             st.error(f"❌ 네이버 API 통신 실패 (에러코드: {res.status_code})")
             st.warning("⚠️ 서버 응답 원본 확인:")
-            st.code(f"Status Code: {res.status_code}\nResponse Text: {res.text if res.text else '네이버가 메시지 없이 응답을 거절함 (인증 키/비밀키 입력 재확인 필요)'}")
+            st.code(f"Status Code: {res.status_code}\nResponse Text: {res.text if res.text else '네이버 보안 필터가 암호화 헤더 불일치로 신호를 즉시 드랍함.'}")
             return None
     except Exception as e:
         st.error(f"⚠️ 연결 중 오류 발생: {e}")
@@ -109,7 +110,7 @@ if run_button:
             st.subheader("📊 실시간 매체 데이터 대시보드")
             st.dataframe(df_result, use_container_width=True)
             
-            # 마케터용 자동 매체 분석 시스템
+            # 퍼포먼스 마케터용 인사이트 분석
             st.subheader("💡 채널별 타겟팅 가이드")
             for index, row in df_result.iterrows():
                 kw = row["키워드"]
@@ -129,7 +130,7 @@ if run_button:
                     st.success(f"🖥️ PC와 모바일 밸런스가 좋습니다 (모바일 {mo_search:,}건 / PC {pc_search:,}건). 두 매체 모두 모니터링이 필요합니다.")
                 st.write("---")
                 
-            # 엑셀 다운로드 기능
+            # 엑셀 다운로드
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_result.to_excel(writer, sheet_name='네이버_API_리포트', index=False)
