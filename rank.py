@@ -26,9 +26,11 @@ with st.sidebar:
     input_keywords = st.text_input("분석할 키워드 (쉼표로 구분)", "뷰티디바이스, 수분크림")
     run_button = st.button("📊 실시간 API 데이터 가져오기")
 
-# [🔥 초정밀 수정] 초(Second) 단위 타임스탬프 반영 및 바이트 서명 조립
+# [🎯 최종 매칭] 네이버 게이트웨이가 요구하는 13자리 밀리초 기반 암호화 생성
 def make_signature(timestamp, method, uri, secret_key):
+    # 네이버 공식 문서 규격: {TIMESTAMP}\n{METHOD}\n{API_URL}
     message = f"{timestamp}\n{method}\n{uri}"
+    
     secret_bytes = bytes(secret_key.strip(), 'utf-8')
     message_bytes = bytes(message, 'utf-8')
     
@@ -45,13 +47,13 @@ def get_keyword_stats(keywords_list, cust_id, api_key, secret_key):
     clean_api_key = str(api_key).strip()
     clean_secret_key = str(secret_key).strip()
     
-    # [⚠️ 핵심 변경] 밀리초(*1000)가 아닌 초(10자리 숫자의 문자열) 단위 고정
-    current_timestamp = str(int(time.time()))
+    # [🔥 완벽 싱크] 네이버 게이트웨이 표준 규격인 13자리 밀리초(ms) 타임스탬프 채택
+    current_timestamp = str(int(time.time() * 1000))
     
-    # 서명 발급
+    # 13자리 밀리초와 개행 문자가 정확히 조합된 서명 발급
     signature = make_signature(current_timestamp, method, pure_uri, clean_secret_key)
     
-    # 네이버 게이트웨이 표준 헤더 순서 맵핑
+    # 네이버 게이트웨이 인증 헤더 셋업
     headers = {
         "X-Timestamp": current_timestamp,
         "X-API-KEY": clean_api_key,
@@ -74,7 +76,7 @@ def get_keyword_stats(keywords_list, cust_id, api_key, secret_key):
         else:
             st.error(f"❌ 네이버 API 통신 실패 (에러코드: {res.status_code})")
             st.warning("⚠️ 서버 응답 원본 확인:")
-            st.code(f"Status Code: {res.status_code}\nResponse Text: {res.text if res.text else '네이버 보안 필터가 암호화 형식을 거절함. 타임스탬프 단위를 대조해 주세요.'}")
+            st.code(f"Status Code: {res.status_code}\nResponse Text: {res.text if res.text else '네이버 보안 필터가 암호화 형식을 거절했습니다.'}")
             return None
     except Exception as e:
         st.error(f"⚠️ 연결 중 오류 발생: {e}")
@@ -104,7 +106,7 @@ if run_button:
             st.subheader("📊 실시간 매체 데이터 대시보드")
             st.dataframe(df_result, use_container_width=True)
             
-            # 퍼포먼스 마케터용 인사이트 분석
+            # 마케팅 타겟팅 가이드 출력
             st.subheader("💡 채널별 타겟팅 가이드")
             for index, row in df_result.iterrows():
                 kw = row["키워드"]
