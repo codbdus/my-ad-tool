@@ -4,9 +4,7 @@ import time
 import hmac
 import hashlib
 import base64
-import urllib.request
-import urllib.parse
-import json
+import requests
 from io import BytesIO
 
 # 웹사이트 기본 설정
@@ -28,8 +26,9 @@ with st.sidebar:
     input_keywords = st.text_input("분석할 키워드 (쉼표로 구분)", "뷰티디바이스, 수분크림")
     run_button = st.button("📊 실시간 API 데이터 가져오기")
 
-# [네이버 공식 가이드라인 표준 Signature 로직]
+# [🔥 초정밀 수정] 네이버 공식 문서 규격서에 따른 서명 생성
 def make_signature(timestamp, method, uri, secret_key):
+    # URI 스펙에 포함되는 경로만 정확히 결합해야 합니다.
     message = f"{timestamp}\n{method}\n{uri}"
     secret_bytes = bytes(secret_key.strip(), 'utf-8')
     message_bytes = bytes(message, 'utf-8')
@@ -37,44 +36,49 @@ def make_signature(timestamp, method, uri, secret_key):
     signing_mac = hmac.new(secret_bytes, message_bytes, digestmod=hashlib.sha256)
     return base64.b64encode(signing_mac.digest()).decode('utf-8')
 
-# 네이버 키워드 데이터 조회 함수 (urllib 표준 방식 전환)
+# 네이버 키워드 데이터 조회 함수
 def get_keyword_stats(keywords_list, cust_id, api_key, secret_key):
-    pure_uri = "/ncc/keywordstats"
+    # [🎯 핵심 변경] 네이버 게이트웨이 라우팅을 통과하기 위한 정확한 내부 호출 경로 지정
+    pure_uri = "/keywordstats"
     method = "GET"
+    request_url = f"https://api.naver.com{pure_uri}"
     
     clean_cust_id = str(cust_id).strip()
     clean_api_key = str(api_key).strip()
     clean_secret_key = str(secret_key).strip()
     
+    # 13자리 자바 표준 밀리초 타임스탬프
     current_timestamp = str(int(time.time() * 1000))
+    
+    # 서명 데이터 생성
     signature = make_signature(current_timestamp, method, pure_uri, clean_secret_key)
     
-    # URL 파라미터 조립
-    kw_query = ",".join([k.strip() for k in keywords_list])
-    params = {"keywords": kw_query}
-    url_params = urllib.parse.urlencode(params)
-    request_url = f"https://api.naver.com{pure_uri}?{url_params}"
+    # 헤더 맵핑
+    headers = {
+        "X-Timestamp": current_timestamp,
+        "X-API-KEY": clean_api_key,
+        "X-Customer": clean_cust_id,
+        "X-Signature": signature,
+        "Content-Type": "application/json"
+    }
     
-    req = urllib.request.Request(request_url, method=method)
-    req.add_header("X-Timestamp", current_timestamp)
-    req.add_header("X-API-KEY", clean_api_key)
-    req.add_header("X-Customer", clean_cust_id)
-    req.add_header("X-Signature", signature)
-    req.add_header("Content-Type", "application/json")
+    kw_query = ",".join([k.strip() for k in keywords_list])
+    params = {
+        "keywords": kw_query
+    }
     
     try:
-        with urllib.request.urlopen(req, timeout=10) as response:
-            res_code = response.getcode()
-            if res_code == 200:
-                res_data = response.read().decode('utf-8')
-                data = json.loads(res_data)
-                return pd.DataFrame(data.get("keywordList", []))
-    except urllib.error.HTTPError as e:
-        error_msg = e.read().decode('utf-8') if e.read() else ""
-        st.error(f"❌ 네이버 API 통신 실패 (에러코드: {e.code})")
-        st.warning("⚠️ 인증 키 값 점검 요망:")
-        st.info("네이버는 API Key, Secret Key, 고객 ID 중 하나만 틀려도 보안상 404 에러를 던집니다. 광고주센터 [SA API 사용 관리] 화면에서 복사할 때 앞뒤로 빈 공백이 들어가지 않았는지 반드시 메모장에 붙여넣어 확인해 주세요!")
-        return None
+        # requests 모듈을 이용한 게이트웨이 호출
+        res = requests.get(request_url, headers=headers, params=params, timeout=10)
+        
+        if res.status_code == 200:
+            data = res.json()
+            return pd.DataFrame(data.get("keywordList", []))
+        else:
+            st.error(f"❌ 네이버 API 통신 실패 (에러코드: {res.status_code})")
+            st.warning("⚠️ 서버 응답 원본 확인:")
+            st.code(f"Status Code: {res.status_code}\nResponse Text: {res.text if res.text else '네이버 보안 필터가 암호화 주소 형식을 거절했습니다. URL 경로를 재확인해 주세요.'}")
+            return None
     except Exception as e:
         st.error(f"⚠️ 연결 중 오류 발생: {e}")
         return None
@@ -103,7 +107,7 @@ if run_button:
             st.subheader("📊 실시간 매체 데이터 대시보드")
             st.dataframe(df_result, use_container_width=True)
             
-            # 마케팅 인사이트
+            # 타겟팅 가이드
             st.subheader("💡 채널별 타겟팅 가이드")
             for index, row in df_result.iterrows():
                 kw = row["키워드"]
