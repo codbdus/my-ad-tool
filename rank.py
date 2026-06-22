@@ -8,7 +8,7 @@ import requests
 from io import BytesIO
 
 # 웹사이트 기본 설정
-st.set_page_config(page_title="네이버 검색광고 대시보드 V5", layout="wide")
+st.set_page_config(page_title="네이버 검색광고 대시보드 V6", layout="wide")
 st.title("🚀 네이버 검색광고 공식 API 연동 모니터링 도구")
 st.markdown("네이버 공식 API를 연결하여 차단 없이 **실시간 키워드 데이터 및 대시보드**를 조회합니다.")
 
@@ -26,8 +26,9 @@ with st.sidebar:
     input_keywords = st.text_input("분석할 키워드 (쉼표로 구분)", "뷰티디바이스, 수분크림")
     run_button = st.button("📊 실시간 API 데이터 가져오기")
 
-# 네이버 API용 암호화 헤더 생성 함수
+# 네이버 API용 정확한 암호화 헤더 생성 함수 (HMAC-SHA256)
 def generate_signature(timestamp, method, uri, secret_key):
+    # 네이버 API는 서비스 명칭을 포함한 전체 URI 경로로 서명해야 합니다.
     message = f"{timestamp}.{method}.{uri}"
     hash_result = hmac.new(
         bytes(secret_key, "utf-8"),
@@ -36,18 +37,17 @@ def generate_signature(timestamp, method, uri, secret_key):
     ).digest()
     return base64.b64encode(hash_result).decode("utf-8")
 
-# 네이버 키워드 데이터 조회 함수 (공식 API 최신 보완 버전)
+# 네이버 키워드 데이터 조회 함수 (404 해결 버전)
 def get_keyword_stats(keywords_list, cust_id, api_key, secret_key):
-    # URI는 순수 경로만 포함하고, 파라미터는 따로 전달하는 구조가 안전합니다.
-    uri = "/keywordstats"
+    # 404의 원인: 키워드 통계(ncc) 서비스 경로를 정확히 명시해야 합니다.
+    uri = "/ncc/keywordstats"
     method = "GET"
     
     # 쉼표로 연결된 키워드 문자열 생성
     kw_string = ",".join(keywords_list)
     
-    # 실제 요청 주소 (네이버 API 기본 도메인)
-    base_url = "https://api.naver.com"
-    request_url = f"{base_url}{uri}"
+    # 네이버 공식 API 엔드포인트 통합 URL
+    request_url = f"https://api.naver.com{uri}"
     
     timestamp = str(int(time.time() * 1000))
     signature = generate_signature(timestamp, method, uri, secret_key)
@@ -60,7 +60,6 @@ def get_keyword_stats(keywords_list, cust_id, api_key, secret_key):
         "Content-Type": "application/json"
     }
     
-    # 파라미터를 params 인자로 명확히 분리하여 404 에러 방지
     params = {
         "keywords": kw_string
     }
@@ -72,7 +71,6 @@ def get_keyword_stats(keywords_list, cust_id, api_key, secret_key):
             return pd.DataFrame(data.get("keywordList", []))
         else:
             st.error(f"❌ 네이버 API 통신 실패 (에러코드: {res.status_code})")
-            st.info("💡 Tip: 404 에러가 지속된다면 발급받으신 API 계정정보(고객ID 등)에 공백이나 오타가 들어갔는지 혹은 '서비스 신청' 처리가 완전히 반영되었는지 확인해 보세요.")
             st.caption(f"상세 에러 내용: {res.text}")
             return None
     except Exception as e:
@@ -84,6 +82,7 @@ if run_button:
     if not (cust_id and api_key and secret_key):
         st.error("⚠️ 네이버 API 인증 정보 3가지를 모두 입력해 주세요!")
     else:
+        # 공백 제거 및 리스트화
         kw_list = [k.strip() for k in input_keywords.split(",")]
         
         with st.spinner("🔄 네이버 공식 광고 서버에서 데이터를 안전하게 가져오는 중..."):
@@ -104,12 +103,12 @@ if run_button:
             st.subheader("📊 실시간 매체 데이터 대시보드")
             st.dataframe(df_result, use_container_width=True)
             
-            # 퍼포먼스 마케터용 인사이트 자동 매칭
+            # 퍼포먼스 마케터용 인사이트 자동 분석
             st.subheader("💡 채널별 타겟팅 가이드")
             for index, row in df_result.iterrows():
                 kw = row["키워드"]
                 
-                # 데이터 정제 및 예외 처리
+                # 데이터 변환 예외 처리
                 try:
                     pc_search = int(str(row['월간 PC 검색수']).replace('<', '').replace(',', '').strip())
                 except:
@@ -121,9 +120,9 @@ if run_button:
                 
                 st.markdown(f"**📍 [{kw}] 매체 가치 분석**")
                 if mo_search > pc_search * 3:
-                    st.info(f"📱 모바일 검색 비중이 PC보다 **압도적으로 높습니다** (모바일 {mo_search:,}건 / PC {pc_search:,}건). 예산 배정을 모바일에 80% 이상 집중하세요.")
+                    st.info(f"📱 모바일 검색 비중이 PC보다 **압도적으로 높습니다** (모바일 {mo_search:,}건 / PC {pc_search:,}건). 광고 예산 배정을 모바일에 80% 이상 집중하세요.")
                 else:
-                    st.success(f"🖥️ PC와 모바일 밸런스가 좋습니다 (모바일 {mo_search:,}건 / PC {pc_search:,}건). 두 채널 모두 순위 방어가 필요합니다.")
+                    st.success(f"🖥️ PC와 모바일 밸런스가 좋습니다 (모바일 {mo_search:,}건 / PC {pc_search:,}건). 두 매체 모두 모니터링이 필요합니다.")
                 st.write("---")
                 
             # 엑셀 다운로드
