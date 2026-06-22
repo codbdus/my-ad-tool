@@ -26,10 +26,11 @@ with st.sidebar:
     input_keywords = st.text_input("분석할 키워드 (쉼표로 구분)", "뷰티디바이스, 수분크림")
     run_button = st.button("📊 실시간 API 데이터 가져오기")
 
-# [🔥 초정밀 수정] 네이버 규격 가이드를 100% 준수한 HMAC 서명 생성
+# [🔥 핵심 수정] 네이버 공식 문서 표준 스펙 가이드에 맞춘 서명 생성 로직
 def make_signature(timestamp, method, uri, secret_key):
-    # 비밀키와 메시지는 정확히 바이트 스트림으로 매핑되어야 서명이 깨지지 않습니다.
-    message = f"{timestamp}.{method}.{uri}"
+    # 네이버 공식 API 규칙: 메시지 조립 시 점('.')이 아니라 줄바꿈('\n')을 사용해야 합니다.
+    message = f"{timestamp}\n{method}\n{uri}"
+    
     secret_bytes = bytes(secret_key.strip(), 'utf-8')
     message_bytes = bytes(message, 'utf-8')
     
@@ -38,22 +39,19 @@ def make_signature(timestamp, method, uri, secret_key):
 
 # 네이버 키워드 데이터 조회 함수
 def get_keyword_stats(keywords_list, cust_id, api_key, secret_key):
-    # 통계 API의 순수 경로명 (서명용)
     pure_uri = "/ncc/keywordstats"
     method = "GET"
+    request_url = f"https://api.naver.com{pure_uri}"
     
-    # 공백 제거 및 파라미터 바인딩
+    # 입력값 공백 제거 및 패키징
     clean_cust_id = str(cust_id).strip()
     clean_api_key = str(api_key).strip()
     clean_secret_key = str(secret_key).strip()
     
-    # API 요청을 보낼 메인 주소
-    request_url = f"https://api.naver.com{pure_uri}"
-    
-    # [중요] 생성 시점의 타임스탬프 고정 (헤더와 서명 동기화)
+    # API 요청을 생성하는 시점의 타임스탬프 고정
     current_timestamp = str(int(time.time() * 1000))
     
-    # 정확한 서명 데이터 굽기
+    # 수정된 서명 함수 호출
     signature = make_signature(current_timestamp, method, pure_uri, clean_secret_key)
     
     headers = {
@@ -64,14 +62,12 @@ def get_keyword_stats(keywords_list, cust_id, api_key, secret_key):
         "Content-Type": "application/json"
     }
     
-    # 쉼표로 연결하되 공백을 완전히 제거한 키워드 쿼리
     kw_query = ",".join([k.strip() for k in keywords_list])
     params = {
         "keywords": kw_query
     }
     
     try:
-        # 네이버 게이트웨이로 최종 통신 요청
         res = requests.get(request_url, headers=headers, params=params, timeout=10)
         
         if res.status_code == 200:
@@ -80,7 +76,7 @@ def get_keyword_stats(keywords_list, cust_id, api_key, secret_key):
         else:
             st.error(f"❌ 네이버 API 통신 실패 (에러코드: {res.status_code})")
             st.warning("⚠️ 서버 응답 원본 확인:")
-            st.code(f"Status Code: {res.status_code}\nResponse Text: {res.text if res.text else '네이버 보안 필터가 암호화 헤더 불일치로 신호를 즉시 드랍함.'}")
+            st.code(f"Status Code: {res.status_code}\nResponse Text: {res.text if res.text else '네이버가 암호화 헤더 불일치로 신호를 차단했습니다. 키 정보에 공백이 없는지 다시 확인해 주세요.'}")
             return None
     except Exception as e:
         st.error(f"⚠️ 연결 중 오류 발생: {e}")
