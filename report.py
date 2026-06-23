@@ -16,36 +16,35 @@ with st.sidebar:
     )
     
     uploaded_file = st.file_uploader(
-        f"[{media_type}] 광고시스템에서 추출한 RAW 파일(CSV 또는 XLSX)을 올려주세요", 
+        f"[{media_type}] 광고시스템에서 추출한 RAW 파일(CSV)을 올려주세요", 
         type=["csv", "xlsx"]
     )
 
 # 2. 메인 화면 로직
 if uploaded_file is not None:
-    df = None
-    file_name = uploaded_file.name
-    
-    # --- 인코딩 및 파일 확장자 예외 처리 (cp949 및 업로드 에러 방지) ---
     try:
+        df = None
+        file_name = uploaded_file.name
+        
+        # 파일 확장자 및 인코딩 처리
         if file_name.endswith('.xlsx'):
             df = pd.read_excel(uploaded_file)
         else:
-            # CSV 파일의 경우 여러 인코딩을 순서대로 시도하여 'cp949' 에러를 원천 차단합니다.
             encodings = ['utf-8-sig', 'utf-8', 'cp949', 'euc-kr']
             for encoding in encodings:
                 try:
-                    uploaded_file.seek(0) # 파일 포인터 리셋
+                    uploaded_file.seek(0)
                     df = pd.read_csv(uploaded_file, encoding=encoding)
                     break
                 except UnicodeDecodeError:
                     continue
             
             if df is None:
-                raise ValueError("지원하는 파일 인코жения(UTF-8, CP949 등)를 찾을 수 없습니다.")
+                raise ValueError("지원하는 파일 인코딩을 찾을 수 없습니다.")
 
         st.subheader(f"📝 {media_type} RAW 데이터 확인")
         
-        # --- [매체별 핵심 지표 표준화 매핑 사전] ---
+        # 매체별 컬럼 매핑 사전
         column_mappings = {
             "네이버 SA": {
                 "impressions": ['노출수', '노출 수'],
@@ -76,7 +75,7 @@ if uploaded_file is not None:
         
         current_mapping = column_mappings[media_type]
         
-        # 실제 데이터에서 매칭되는 컬럼 찾기
+        # 컬럼 매칭 탐색
         found_imp_col = None
         found_clk_col = None
         found_cost_col = None
@@ -90,7 +89,7 @@ if uploaded_file is not None:
             if not found_cost_col and cleaned_col in current_mapping["cost"]:
                 found_cost_col = col
 
-        # 기준이 될 캠페인 컬럼 탐색
+        # 캠페인 컬럼 탐색
         found_camp_col = None
         for col in df.columns:
             if '캠페인' in str(col) or 'Campaign' in str(col):
@@ -99,7 +98,7 @@ if uploaded_file is not None:
         if not found_camp_col:
             found_camp_col = df.columns[0]
 
-        # --- 수치형 데이터 정제 함수 (쉼표 제거 및 문자를 숫자로 변경) ---
+        # 수치형 정제 함수
         def clean_numeric(series):
             return pd.to_numeric(series.astype(str).str.replace(',', '').str.strip(), errors='coerce').fillna(0)
 
@@ -107,7 +106,6 @@ if uploaded_file is not None:
         if found_clk_col: df[found_clk_col] = clean_numeric(df[found_clk_col]).astype(int)
         if found_cost_col: df[found_cost_col] = clean_numeric(df[found_cost_col]).astype(int)
 
-        # 필요한 컬럼만 추려 대시보드에 노출
         display_cols = [found_camp_col]
         if found_imp_col: display_cols.append(found_imp_col)
         if found_clk_col: display_cols.append(found_clk_col)
@@ -115,7 +113,7 @@ if uploaded_file is not None:
         
         st.dataframe(df[display_cols], use_container_width=True)
         
-        # --- [종합 지표 계산] ---
+        # 지표 계산
         total_impressions = df[found_imp_col].sum() if found_imp_col else 0
         total_clicks = df[found_clk_col].sum() if found_clk_col else 0
         total_cost = df[found_cost_col].sum() if found_cost_col else 0
@@ -128,10 +126,4 @@ if uploaded_file is not None:
         
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("총 노출수", f"{total_impressions:,} 회")
-        col2.metric("총 클릭수", f"{total_clicks:,} 회")
-        col3.metric("클릭률 (CTR)", f"{ctr:.2f} %")
-        col4.metric("총 소진 금액", f"{total_cost:,} 원")
-        
-        # --- [엑셀 보고서 다운로드 기능] ---
-        st.markdown("---")
-        st.subheader("📥 정제된 분석 보고서 다운로드")
+        col2.metric("총 클릭수", f"{total
