@@ -20,14 +20,12 @@ with st.sidebar:
 # 2. 메인 화면 로직
 if uploaded_file is not None:
     try:
-        # 네이버 SA 보고서는 보통 상단에 불필요한 행이 있거나 UTF-8/CP949 인코딩 문제가 있을 수 있음
-        # 일반적인 네이버 보고서 형식에 맞춰 cp949로 읽어옵니다.
+        # 네이버 보고서 형식에 맞춰 cp949 인코딩으로 읽어옵니다.
         df = pd.read_csv(uploaded_file, encoding="cp949")
         
         st.subheader(f"📝 {media_type} RAW 데이터 확인")
         
         # --- [광고비/비용 컬럼 자동 인식 및 전처리] ---
-        # 네이버 SA에서 주로 쓰이는 비용 컬럼명 후보들
         cost_candidates = ['총비용', '광고비', '비용', '총비용(VAT포함)', '광고비(VAT포함)']
         found_cost_col = None
         
@@ -47,7 +45,6 @@ if uploaded_file is not None:
             df[found_cost_col] = df[found_cost_col].astype(str).str.replace(',', '').str.strip()
             df[found_cost_col] = pd.to_numeric(df[found_cost_col], errors='coerce').fillna(0).astype(int)
             
-            # 노출수, 클릭수, 발견된 광고비 컬럼만 메인으로 보여주기
             display_cols = ['캠페인', '노출수', '클릭수', found_cost_col]
             available_cols = [c for c in display_cols if c in df.columns]
             st.dataframe(df[available_cols], use_container_width=True)
@@ -69,4 +66,37 @@ if uploaded_file is not None:
             col4.metric("총 소진 금액", f"{total_cost:,} 원")
             
             # --- [엑셀 보고서 다운로드 기능] ---
-            st
+            st.markdown("---")
+            st.subheader("📥 정제된 분석 보고서 다운로드")
+            
+            summary_df = pd.DataFrame([{
+                "총 노출수": total_impressions,
+                "총 클릭수": total_clicks,
+                "클릭률(CTR)": f"{ctr:.2f}%",
+                "평균클릭비용(CPC)": round(cpc),
+                "총 소진금액(원)": total_cost
+            }])
+            
+            excel_buffer = io.BytesIO()
+            with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
+                df.to_excel(writer, sheet_name='캠페인별 상세데이터', index=False)
+                summary_df.to_excel(writer, sheet_name='종합 요약 보고서', index=False)
+                
+            excel_data = excel_buffer.getvalue()
+            
+            st.download_button(
+                label="🟢 정제된 엑셀 보고서 (.xlsx) 다운로드",
+                data=excel_data,
+                file_name="네이버SA_광고분석_보고서.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            
+        else:
+            st.warning("⚠️ 데이터에서 광고비(비용) 컬럼을 자동으로 인식하지 못했습니다.")
+            selected_cost_col = st.selectbox("어떤 컬럼이 광고비(금액) 데이터인가요?", df.columns)
+            st.info("💡 위의 컬럼을 선택하시면 하단 보고서가 계산됩니다.")
+            
+    except Exception as e:
+        st.error(f"파일을 읽는 중 오류가 발생했습니다: {e}")
+else:
+    st.info("👈 왼쪽 사이드바에서 네이버 SA RAW 데이터(CSV) 파일을 업로드해 주세요!")
