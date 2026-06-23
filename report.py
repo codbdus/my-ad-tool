@@ -86,29 +86,4 @@ def strict_clean(series):
         return pd.Series(0, index=df.index)
     s_txt = series.astype(str)
     v = s_txt.str.replace(r'[^\d]', '', regex=True)
-    v = v.replace(['', 'nan'], '0')
-    return pd.to_numeric(v, errors='coerce').fillna(0)
-
-calc_df = df.copy()
-if f_imp: calc_df[f_imp] = strict_clean(df[f_imp])
-if f_clk: calc_df[f_clk] = strict_clean(df[f_clk])
-if f_cost: calc_df[f_cost] = strict_clean(df[f_cost])
-
-cols = [f_camp]
-for f in [f_imp, f_clk, f_cost]:
-    if f and f in df.columns: cols.append(f)
-
-st.dataframe(df[cols], use_container_width=True)
-
-t_imp = int(calc_df[f_imp].sum()) if f_imp else 0
-t_clk = int(calc_df[f_clk].sum()) if f_clk else 0
-t_cost = int(calc_df[f_cost].sum()) if f_cost else 0
-ctr = (t_clk / t_imp * 100) if t_imp > 0 else 0
-cpc = (t_cost / t_clk) if t_clk > 0 else 0
-
-st.markdown("---")
-st.subheader(f"📈 {media} 주요 지표 요약")
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("총 노출수", f"{t_imp:,} 회")
-c2.metric("총 클릭수", f"{t_clk:,} 회")
-c3.metric("클릭률
+    v = v.replace(['', 'nan'], '0
