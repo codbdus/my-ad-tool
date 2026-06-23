@@ -2,21 +2,25 @@ import streamlit as st
 import pandas as pd
 import io
 
-st.set_page_config(page_title="통합 광고 보고서", layout="wide")
+st.set_page_config(page_title="광고 보고서", layout="wide")
 st.title("📊 통합 매체 광고 보고서 생성기")
 
 with st.sidebar:
     st.header("📁 RAW 데이터 업로드")
-    media = st.selectbox("광고 매체 선택", ["네이버 SA", "네이버 GFA", "구글", "메타(페이스북)", "카카오"])
-    uploaded_file = st.file_uploader(f"[{media}] RAW 파일(CSV/XLSX)", type=["csv", "xlsx"])
+    list_m = ["네이버 SA", "네이버 GFA", "구글", "메타(페이스북)", "카카오"]
+    media = st.selectbox("광고 매체 선택", list_m)
+    uploaded_file = st.file_uploader(
+        f"[{media}] RAW 파일", 
+        type=["csv", "xlsx"]
+    )
 
 if uploaded_file is None:
     st.info("👈 왼쪽에서 매체를 선택하고 파일을 업로드해 주세요!")
     st.stop()
 
-# 파일 읽기 (인코딩 자동 파싱)
 df = None
 f_name = uploaded_file.name
+
 if f_name.endswith('.xlsx'):
     df = pd.read_excel(uploaded_file)
 else:
@@ -34,7 +38,6 @@ if df is None:
 
 st.subheader(f"📝 {media} RAW 데이터 확인")
 
-# 매체별 컬럼 매핑 단순화
 maps = {
     "네이버 SA": (['노출수', '노출 수'], ['클릭수', '클릭 수'], ['총비용', '광고비', '비용']),
     "네이버 GFA": (['노출수', '노출 수'], ['클릭수', '클릭 수'], ['소진액', '소진 금액', '광고비']),
@@ -46,17 +49,69 @@ maps = {
 imp_keys, clk_keys, cost_keys = maps[media]
 f_imp, f_clk, f_cost, f_camp = None, None, None, df.columns[0]
 
-# 컬럼 자동 찾기
 for c in df.columns:
     c_str = str(c).strip()
-    if not f_imp and c_str in imp_keys: f_imp = c
-    if not f_clk and c_str in clk_keys: f_clk = c
-    if not f_cost and c_str in cost_keys: f_cost = c
-    if '캠페인' in c_str or 'Campaign' in c_str: f_camp = c
+    if not f_imp and c_str in imp_keys:
+        f_imp = c
+    if not f_clk and c_str in clk_keys:
+        f_clk = c
+    if not f_cost and c_str in cost_keys:
+        f_cost = c
+    if '캠페인' in c_str or 'Campaign' in c_str:
+        f_camp = c
 
-# 숫자 정제 함수
 def clean(s):
-    return pd.to_numeric(s.astype(str).str.replace(',', '').str.strip(), errors='coerce').fillna(0)
+    s_clean = s.astype(str).str.replace(',', '').str.strip()
+    return pd.to_numeric(s_clean, errors='coerce').fillna(0)
 
-if f_imp: df[f_imp] = clean(df[f_imp]).astype(int)
-if f_clk: df[f_clk] = clean(df
+if f_imp:
+    df[f_imp] = clean(df[f_imp]).astype(int)
+if f_clk:
+    df[f_clk] = clean(df[f_clk]).astype(int)
+if f_cost:
+    df[f_cost] = clean(df[f_cost]).astype(int)
+
+cols = [f_camp]
+for f in [f_imp, f_clk, f_cost]:
+    if f:
+        cols.append(f)
+
+st.dataframe(df[cols], use_container_width=True)
+
+t_imp = int(df[f_imp].sum()) if f_imp else 0
+t_clk = int(df[f_clk].sum()) if f_clk else 0
+t_cost = int(df[f_cost].sum()) if f_cost else 0
+ctr = (t_clk / t_imp * 100) if t_imp > 0 else 0
+cpc = (t_cost / t_clk) if t_clk > 0 else 0
+
+st.markdown("---")
+st.subheader(f"📈 {media} 주요 지표 요약")
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("총 노출수", f"{t_imp:,} 회")
+c2.metric("총 클릭수", f"{t_clk:,} 회")
+c3.metric("클릭률 (CTR)", f"{ctr:.2f} %")
+c4.metric("총 소진 금액", f"{t_cost:,} 원")
+
+st.markdown("---")
+st.subheader("📥 정제된 분석 보고서 다운로드")
+
+out_df = pd.DataFrame([{
+    "매체명": media, 
+    "총 노출수": t_imp, 
+    "총 클릭수": t_clk, 
+    "클릭률": f"{ctr:.2f}%", 
+    "CPC": round(cpc), 
+    "총 소진금액": t_cost
+}])
+
+buf = io.BytesIO()
+with pd.ExcelWriter(buf, engine='xlsxwriter') as w:
+    df[cols].to_excel(w, sheet_name='상세', index=False)
+    out_df.to_excel(w, sheet_name='요약', index=False)
+
+st.download_button(
+    label="🟢 정제된 엑셀 보고서 (.xlsx) 다운로드", 
+    data=buf.getvalue(), 
+    file_name=f"{media}_광고보고서.xlsx", 
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
