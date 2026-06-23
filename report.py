@@ -36,16 +36,14 @@ if df is None or df.empty:
 df.columns = [str(c).strip() for c in df.columns]
 st.warning(f"📢 [진단] 컬럼명 목록: {list(df.columns)}")
 
-# [해결 핵심] 변수 매칭 및 연산을 한 줄로 축소하여 짤림 원천 차단
+# 컬럼 자동 검색
 f_imp = next((c for c in df.columns if any(k in c for k in ['노출', 'Impressions', 'Imp'])), None)
 f_clk = next((c for c in df.columns if any(k in c for k in ['클릭', 'Clicks'])), None)
 f_cost = next((c for c in df.columns if any(k in c for k in ['비용', '광고비', '소진', '지출', 'Cost'])), None)
 f_camp = next((c for c in df.columns if any(k in c for k in ['캠페인', 'Campaign', '광고상품', '그룹', '키워드'])), df.columns[0])
 
-# 숫자가 아닌 문자 제거 후 합산하는 안전한 인라인 연산
-def parse_sum(col):
-    if not col or col not in df.columns: return 0
-    return int(pd.to_numeric(df[col].astype(str).str.replace(r'[^\d]', '', regex=True), errors='coerce').fillna(0).sum())
-
-t_imp = parse_sum(f_imp)
-t_clk = parse_sum(
+# 함수를 완전히 없애고 한 줄 인라인 연산으로 짤림 방지
+t_imp = int(pd.to_numeric(df[f_imp].astype(str).str.replace(r'[^\d]', '', regex=True), errors='coerce').fillna(0).sum()) if f_imp and f_imp in df.columns else 0
+t_clk = int(pd.to_numeric(df[f_clk].astype(str).str.replace(r'[^\d]', '', regex=True), errors='coerce').fillna(0).sum()) if f_clk and f_clk in df.columns else 0
+t_cost = int(pd.to_numeric(df[f_cost].astype(str).str.replace(r'[^\d]', '', regex=True), errors='coerce').fillna(0).sum()) if f_cost and f_cost in df.columns else 0
+ctr = (t_
