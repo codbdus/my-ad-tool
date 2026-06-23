@@ -38,7 +38,6 @@ if df is None:
 
 st.subheader(f"📝 {media} RAW 데이터 확인")
 
-# 1. 매체별 컬럼 매핑 사전 정교화
 maps = {
     "네이버 SA": (['노출수', '노출 수'], ['클릭수', '클릭 수'], ['총비용', '광고비', '비용', '총비용(VAT포함)', '광고비(VAT포함)']),
     "네이버 GFA": (['노출수', '노출 수'], ['클릭수', '클릭 수'], ['소진액', '소진 금액', '광고비']),
@@ -61,12 +60,14 @@ for c in df.columns:
     if '캠페인' in c_str or 'Campaign' in c_str:
         f_camp = c
 
-# 지표 요약이 0으로 뜨는 버그를 잡기 위해 수치 정제 로직 강화
+# 데이터 전처리 오류 철저하게 방어 (숫자가 아닌 모든 문자/공백 제거)
 def clean(s):
     if s is None:
         return pd.Series(0, index=df.index)
-    # 문자열 처리 및 기호 제거
-    s_clean = s.astype(str).str.replace(',', '').str.replace('원', '').str.strip()
+    # 정규식을 사용하여 숫자와 마이너스(-) 부호가 아닌 모든 문자(한글, 공백, 콤마 등)를 강제 제거
+    s_clean = s.astype(str).str.replace(r'[^\d\-]', '', regex=True).str.strip()
+    # 빈 값인 경우 0으로 치환 후 수치화
+    s_clean = s_clean.replace('', '0')
     return pd.to_numeric(s_clean, errors='coerce').fillna(0)
 
 if f_imp:
@@ -74,32 +75,4 @@ if f_imp:
 if f_clk:
     df[f_clk] = clean(df[f_clk]).astype(int)
 if f_cost:
-    df[f_cost] = clean(df[f_cost]).astype(int)
-
-cols = [f_camp]
-for f in [f_imp, f_clk, f_cost]:
-    if f:
-        cols.append(f)
-
-st.dataframe(df[cols], use_container_width=True)
-
-# 2. 데이터 합산 및 지표 계산
-t_imp = int(df[f_imp].sum()) if f_imp else 0
-t_clk = int(df[f_clk].sum()) if f_clk else 0
-t_cost = int(df[f_cost].sum()) if f_cost else 0
-ctr = (t_clk / t_imp * 100) if t_imp > 0 else 0
-cpc = (t_cost / t_clk) if t_clk > 0 else 0
-
-st.markdown("---")
-st.subheader(f"📈 {media} 주요 지표 요약")
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("총 노출수", f"{t_imp:,} 회")
-c2.metric("총 클릭수", f"{t_clk:,} 회")
-c3.metric("클릭률 (CTR)", f"{ctr:.2f} %")
-c4.metric("총 소진 금액", f"{t_cost:,} 원")
-
-# 3. AI 자동화 보고서 코멘트 영역 복구
-st.markdown("---")
-st.subheader("🤖 AI 자동화 성과 분석 코멘트")
-
-ai_comment = f
+    df[f_cost]
