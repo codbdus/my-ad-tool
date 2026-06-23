@@ -38,8 +38,9 @@ if df is None:
 
 st.subheader(f"📝 {media} RAW 데이터 확인")
 
+# 1. 매체별 컬럼 매핑 사전 정교화
 maps = {
-    "네이버 SA": (['노출수', '노출 수'], ['클릭수', '클릭 수'], ['총비용', '광고비', '비용']),
+    "네이버 SA": (['노출수', '노출 수'], ['클릭수', '클릭 수'], ['총비용', '광고비', '비용', '총비용(VAT포함)', '광고비(VAT포함)']),
     "네이버 GFA": (['노출수', '노출 수'], ['클릭수', '클릭 수'], ['소진액', '소진 금액', '광고비']),
     "구글": (['노출수', 'Impressions'], ['클릭수', 'Clicks'], ['비용', 'Cost']),
     "메타(페이스북)": (['노출', 'Impressions'], ['링크 클릭', 'Clicks'], ['지출 금액', 'Amount Spent']),
@@ -60,8 +61,12 @@ for c in df.columns:
     if '캠페인' in c_str or 'Campaign' in c_str:
         f_camp = c
 
+# 지표 요약이 0으로 뜨는 버그를 잡기 위해 수치 정제 로직 강화
 def clean(s):
-    s_clean = s.astype(str).str.replace(',', '').str.strip()
+    if s is None:
+        return pd.Series(0, index=df.index)
+    # 문자열 처리 및 기호 제거
+    s_clean = s.astype(str).str.replace(',', '').str.replace('원', '').str.strip()
     return pd.to_numeric(s_clean, errors='coerce').fillna(0)
 
 if f_imp:
@@ -78,6 +83,7 @@ for f in [f_imp, f_clk, f_cost]:
 
 st.dataframe(df[cols], use_container_width=True)
 
+# 2. 데이터 합산 및 지표 계산
 t_imp = int(df[f_imp].sum()) if f_imp else 0
 t_clk = int(df[f_clk].sum()) if f_clk else 0
 t_cost = int(df[f_cost].sum()) if f_cost else 0
@@ -92,26 +98,8 @@ c2.metric("총 클릭수", f"{t_clk:,} 회")
 c3.metric("클릭률 (CTR)", f"{ctr:.2f} %")
 c4.metric("총 소진 금액", f"{t_cost:,} 원")
 
+# 3. AI 자동화 보고서 코멘트 영역 복구
 st.markdown("---")
-st.subheader("📥 정제된 분석 보고서 다운로드")
+st.subheader("🤖 AI 자동화 성과 분석 코멘트")
 
-out_df = pd.DataFrame([{
-    "매체명": media, 
-    "총 노출수": t_imp, 
-    "총 클릭수": t_clk, 
-    "클릭률": f"{ctr:.2f}%", 
-    "CPC": round(cpc), 
-    "총 소진금액": t_cost
-}])
-
-buf = io.BytesIO()
-with pd.ExcelWriter(buf, engine='xlsxwriter') as w:
-    df[cols].to_excel(w, sheet_name='상세', index=False)
-    out_df.to_excel(w, sheet_name='요약', index=False)
-
-st.download_button(
-    label="🟢 정제된 엑셀 보고서 (.xlsx) 다운로드", 
-    data=buf.getvalue(), 
-    file_name=f"{media}_광고보고서.xlsx", 
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
+ai_comment = f
