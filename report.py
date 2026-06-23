@@ -75,8 +75,10 @@ maps = {
 imp_keys, clk_keys, cost_keys = maps[media]
 f_imp, f_clk, f_cost, f_camp = None, None, None, df.columns[0]
 
+# [오류 해결 지점] 
+# 문장이 잘리지 않도록 검사할 키워드 리스트를 세로로 완전히 분리했습니다.
+camp_keywords = ['캠페인', 'Campaign', '광고상품']
+
 for c in df.columns:
     if not f_imp and c in imp_keys: f_imp = c
     if not f_clk and c in clk_keys: f_clk = c
-    if not f_cost and c in cost_keys: f_cost = c
-    if '캠페인' in c or 'Campaign' in c or '광고상품
