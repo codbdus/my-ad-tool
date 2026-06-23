@@ -40,7 +40,6 @@ if uploaded_file is not None:
 
         st.subheader(f"📝 {media_type} RAW 데이터 확인")
         
-        # 깃허브 복사 오류 방지를 위해 딕셔너리 구조를 한 줄 단위로 명확하게 간소화했습니다.
         column_mappings = {}
         column_mappings["네이버 SA"] = {"impressions": ['노출수', '노출 수'], "clicks": ['클릭수', '클릭 수'], "cost": ['총비용', '광고비', '비용', '총비용(VAT포함)', '광고비(VAT포함)']}
         column_mappings["네이버 GFA"] = {"impressions": ['노출수', '노출 수'], "clicks": ['클릭수', '클릭 수'], "cost": ['소진액', '소진 금액', '광고비', '총비용']}
@@ -68,4 +67,6 @@ if uploaded_file is not None:
             if '캠페인' in str(col) or 'Campaign' in str(col):
                 found_camp_col = col
                 break
-        if not found_camp_col:
+                
+        if found_camp_col is None:
+            found_camp_col = df.columns
