@@ -56,12 +56,10 @@ if df is None or df.empty:
     st.error("⚠️ 파일 데이터를 읽을 수 없습니다.")
     st.stop()
 
-# 컬럼명 정리
 df.columns = [str(c).strip() for c in df.columns]
 
 st.subheader(f"📝 {media} RAW 데이터 확인")
 
-# 매칭 사전
 maps = {
     "네이버 SA": (
         ['노출수', '노출 수', '노출'], 
@@ -83,25 +81,13 @@ for c in df.columns:
     if not f_cost and c in cost_keys: f_cost = c
     if '캠페인' in c or 'Campaign' in c or '광고상품' in c: f_camp = c
 
-# [오류 해결 부분] 
-# 마침표 뒤가 잘리지 않도록 줄 바꿈으로 잘게 쪼갰습니다.
 def strict_clean(series):
     if series is None:
         return pd.Series(0, index=df.index)
-    
-    # 쪼개서 결합하는 방식으로 코드 우측 컷팅 현상 원천 차단
     s_txt = series.astype(str)
-    v = s_txt.str.replace(
-        r'[^\d]', 
-        '', 
-        regex=True
-    )
+    v = s_txt.str.replace(r'[^\d]', '', regex=True)
     v = v.replace(['', 'nan'], '0')
-    
-    return pd.to_numeric(
-        v, 
-        errors='coerce'
-    ).fillna(0)
+    return pd.to_numeric(v, errors='coerce').fillna(0)
 
 calc_df = df.copy()
 if f_imp: calc_df[f_imp] = strict_clean(df[f_imp])
@@ -114,7 +100,6 @@ for f in [f_imp, f_clk, f_cost]:
 
 st.dataframe(df[cols], use_container_width=True)
 
-# 지표 계산
 t_imp = int(calc_df[f_imp].sum()) if f_imp else 0
 t_clk = int(calc_df[f_clk].sum()) if f_clk else 0
 t_cost = int(calc_df[f_cost].sum()) if f_cost else 0
@@ -126,12 +111,4 @@ st.subheader(f"📈 {media} 주요 지표 요약")
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("총 노출수", f"{t_imp:,} 회")
 c2.metric("총 클릭수", f"{t_clk:,} 회")
-c3.metric("클릭률 (CTR)", f"{ctr:.2f} %")
-c4.metric("총 소진 금액", f"{t_cost:,} 원")
-
-st.markdown("---")
-st.subheader("🤖 AI 자동화 성과 분석 코멘트")
-
-if t_imp > 0:
-    ai_txt = f"**[{media} 광고 성과 데이터 정밀 분석 결과]**\n\n"
-    ai_txt += f"-
+c3.metric("클릭률
