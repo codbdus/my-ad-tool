@@ -1,108 +1,141 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
+import gspread
+from google.oauth2.service_account import Credentials
+import openai  # AI 코멘트 자동화를 위한 라이브러리 (선택)
 
-# 1. 페이지 설정 및 디자인 CSS 적용
-st.set_page_config(page_title="통합 매체 광고 성과 자동화 보고서", layout="wide")
+# 1. 페이지 기본 설정
+st.set_page_config(page_title="통합 매체 자동화 보고서 리포터", layout="wide")
+st.title("📊 통합 매체 광고 성과 자동화 보고서 시스템")
+st.caption("바이브코딩(Vibe Coding)으로 구축하는 대행사 멀티매체 리포팅 툴")
+st.markdown("---")
 
-st.markdown("""
-    <style>
-    .main-title { font-size: 30px; font-weight: bold; color: #1E293B; margin-bottom: 5px; }
-    .sub-title { font-size: 14px; color: #64748B; margin-bottom: 30px; }
-    .metric-box { background-color: #F8FAFC; padding: 15px; border-radius: 10px; border: 1px solid #E2E8F0; text-align: center; }
-    .metric-label { font-size: 13px; color: #64748B; font-weight: 500; }
-    .metric-value { font-size: 22px; color: #0F172A; font-weight: bold; margin-top: 5px; }
-    </style>
-""", unsafe_allow_html=True)
-
-# 2. 사이드바 - 파일 업로드 영역
-with st.sidebar:
-    st.header("📁 RAW 데이터 업로드")
-    media_type = st.selectbox("업로드할 광고 매체를 선택하세요", ["네이버 SA", "기타 매체"])
-    uploaded_file = st.file_uploader(f"[{media_type}] 광고시스템에서 추출한 RAW 파일", type=["csv", "xlsx"])
-
-# 3. 메인 화면 타이틀
-st.markdown('<div class="main-title">📊 통합 매체 광고 성과 자동화 보고서 시스템</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-title">바이브코딩(Vibe Coding)으로 구축하는 대행사 멀티매체 리포팅 툴</div>', unsafe_allow_html=True)
-
-if uploaded_file is not None:
-    # 인코딩 문제를 방지하기 위해 예외 처리하며 데이터 로드
+# 구글 시트 연결 함수 (Secret 설정 필수)
+def connect_google_sheet():
     try:
-        if uploaded_file.name.endswith('.csv'):
-            df = pd.read_csv(uploaded_file, encoding='utf-8-sig')
+        # Streamlit의 Secrets 기능을 이용해 구글 크레덴셜 안전하게 로드
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_info(st.secrets["gapi"], scopes=scope)
+        client = gspread.authorize(creds)
+        # 본인의 구글 시트 URL 입력 또는 비밀키 설정
+        sheet_url = "https://docs.google.com/spreadsheets/d/1CMNsIc2giLwUikzhYub5MRVOJFl_n9je-EOuu_gV63g/edit#gid=0"
+        doc = client.open_by_url(sheet_url)
+        return doc
+    except Exception as e:
+        st.error(f"구글 시트 연결에 실패했습니다. Secrets 설정을 확인하세요. 에러: {e}")
+        return None
+
+# AI 코멘트 생성 함수 (OpenAI API 활용 예시)
+def generate_ai_comment(media_name, budget, spend, balance):
+    # API 키가 세팅되어 있다면 LLM 작동, 없으면 규칙 기반 템플릿 반환
+    if "OPENAI_API_KEY" in st.secrets:
+        openai.api_key = st.secrets["OPENAI_API_KEY"]
+        prompt = f"""
+        당신은 뷰티 전문 퍼포먼스 마케터입니다. 오늘 {media_name} 매체의 광고 운영 결과는 다음과 같습니다.
+        - 매체 예산: {budget}원
+        - 당일 소진 광고비: {spend}원
+        - 남은 예산 잔액: {balance}원
+        
+        이 데이터를 기반으로 광고주 보고서용 '운영 코멘트 및 대응 내용'을 문장 부호(-) 형태의 한 줄 요약으로 전문성 있게 1~2개 작성해 주세요.
+        예시: - 일자별 목표예산 맞춰 소진 확인 완료 및 효율 방어 진행
+        """
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7
+            )
+            return response.choices[0].message['content'].strip()
+        except:
+            return f"- {media_name} 예산 소진 확인 및 잔액 {balance:,}원 기준 효율 방어 진행 완료."
+    else:
+        # Fallback 템플릿
+        return f"- 하루 예산 조정으로 효율 방어 진행후 예산 소진 확인 완료\n- {media_name} 당일 모니터링 및 소재 이상 무"
+
+# 2. 사이드바 컨트롤러 (매체 및 파일 선택)
+st.sidebar.header("📁 RAW 데이터 업로드")
+selected_media = st.sidebar.selectbox(
+    "업로드할 광고 매체를 선택하세요", 
+    ["네이버 SA", "네이버 GFA", "구글 SA", "구글 Demand Gen", "메타(Meta)"]
+)
+uploaded_file = st.sidebar.file_uploader(f"[{selected_media}] 광고시스템에서 추출한 RAW 파일", type=["csv", "xlsx"])
+
+# 구글 시트 미리 연결
+doc = connect_google_sheet()
+
+col1, col2 = st.columns([3, 2])
+
+# 3. 메인 화면 로직
+if uploaded_file is not None:
+    # 3-1. 파일 읽기 및 매체별 통일화(Mapping)
+    if uploaded_file.name.endswith('.csv'):
+        df_raw = pd.read_csv(uploaded_file)
+    else:
+        df_raw = pd.read_excel(uploaded_file)
+        
+    with col1:
+        st.subheader(f"📋 {selected_media} RAW 데이터 원본 (상위 5개 행)")
+        st.dataframe(df_raw.head(5), use_container_width=True)
+        
+        # 💡 매체별 컬럼 매핑 표준화 파트
+        # 각 매체마다 '광고비', '비용', 'Spend' 등으로 이름이 다른 것을 하나로 통일합니다.
+        spend_val = 0
+        if "광고비" in df_raw.columns:
+            spend_val = df_raw["광고비"].sum()
+        elif "비용" in df_raw.columns:
+            spend_val = df_raw["비용"].sum()
+        elif "Spend" in df_raw.columns:
+            spend_val = df_raw["Spend"].sum()
         else:
-            df = pd.read_excel(uploaded_file)
-    except UnicodeDecodeError:
-        df = pd.read_csv(uploaded_file, encoding='cp949')
+            # 적절한 컬럼을 찾지 못했을 때 수동 입력 유도
+            spend_val = st.number_input("데이터에서 광고비를 인식하지 못했습니다. 직접 입력해주세요:", min_value=0, value=0)
+            
+        st.metric(label=f"📊 분석된 {selected_media} 총 소진 금액", value=f"{int(spend_val):,} 원")
 
-    # 모든 컬럼명의 양끝 공백 제거
-    df.columns = [str(col).strip() for col in df.columns]
-    
-    # [수정된 부분] 안전하게 리스트 형태로 컬럼 포함 여부 체크
-    required_keywords = ['총비용', '캠페인', '비용', '광고비']
-    has_keyword = any(k in df.columns for k in required_keywords)
-    
-    if not has_keyword:
-        for i in range(min(10, len(df))):  # 상위 10개 행 안에서 검색
-            row_str = df.iloc[i].astype(str).str.strip()
-            if row_str.str.contains('총비용|캠페인|비용|광고비').any():
-                df.columns = [str(c).strip() for c in df.iloc[i]]
-                df = df.iloc[i+1:].reset_index(drop=True)
-                break
-
-    # 매체 보고서 양식에 따른 다각도 컬럼명 표준화 (동의어 매칭)
-    column_mapping = {
-        '비용': '총비용',
-        '광고비': '총비용',
-        '소진금액': '총비용',
-        '소진액': '총비용',
-        '클릭': '클릭수',
-        '노출': '노출수',
-        '전환수': '총전환수',
-        '전환': '총전환수',
-        '전환매출액': '총전환매출액'
-    }
-    df.rename(columns=column_mapping, inplace=True)
-
-    # 데이터 내 '캠페인' 열이 존재하지 않는 경우 첫 번째 열을 캠페인으로 간주
-    if '캠페인' not in df.columns and len(df.columns) > 0:
-        df.rename(columns={df.columns[0]: '캠페인'}, inplace=True)
-
-    # 문자열 데이터('123,456원')를 숫자로 변환
-    num_cols = ['노출수', '클릭수', '총비용', '총전환수', '총전환매출액']
-    for col in num_cols:
-        if col in df.columns:
-            df[col] = df[col].astype(str).str.replace(',', '').str.replace('원', '').str.strip()
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-
-    # 필수 통계 지표 계산
-    if '총비용' in df.columns:
-        total_spend = int(df['총비용'].sum())
-        total_impressions = int(df['노출수'].sum()) if '노출수' in df.columns else 0
-        total_clicks = int(df['클릭수'].sum()) if '클릭수' in df.columns else 0
-        total_conversions = int(df['총전환수'].sum()) if '총전환수' in df.columns else 0
+    # 3-2. 구글 시트 라이팅 및 AI 코멘트 생성
+    with col2:
+        st.subheader("🤖 자동 생성된 AI 리포트 코멘트")
         
-        # 4. 상단 대시보드 메트릭 디자인 생성
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.markdown(f'<div class="metric-box"><div class="metric-label">💵 총 소진 금액</div><div class="metric-value">{total_spend:,} 원</div></div>', unsafe_allow_html=True)
-        with col2:
-            st.markdown(f'<div class="metric-box"><div class="metric-label">👁️ 총 노출수</div><div class="metric-value">{total_impressions:,} 회</div></div>', unsafe_allow_html=True)
-        with col3:
-            st.markdown(f'<div class="metric-box"><div class="metric-label">🖱️ 총 클릭수</div><div class="metric-value">{total_clicks:,} 회</div></div>', unsafe_allow_html=True)
-        with col4:
-            st.markdown(f'<div class="metric-box"><div class="metric-label">🎯 총 전환수</div><div class="metric-value">{total_conversions:,} 건</div></div>', unsafe_allow_html=True)
-
-        st.write("")
-        st.write("")
-
-        # 5. 데이터 시각화 그래프 섹션 (Plotly 적용)
-        st.subheader("📈 캠페인별 주요 성과 시각화")
-        graph_col1, graph_col2 = st.columns(2)
+        # 임의의 예산 세팅 (실제 구글 시트의 기존 예산 데이터를 가져오거나 입력받을 수 있음)
+        default_budget = 3140000 
+        calculated_balance = default_budget - int(spend_val)
         
-        if '캠페인' in df.columns and len(df) > 0:
-            with graph_col1:
-                fig_spend = px.bar(df, x='캠페인', y='총비용', title='캠페인별 소진 금액 (원)', 
-                                   text_auto=',.0f', color='총비용', color_continuous_scale='Blues')
-                fig_spend.update_layout(xaxis_tickangle=-45, showlegend=False)
-                st.plotly_chart(fig_spend, use_container_width=True)
+        # AI 코멘트 미리보기 생성
+        ai_comment = generate_ai_comment(selected_media, default_budget, int(spend_val), calculated_balance)
+        edited_comment = st.text_area("매체에 기입될 코멘트 내용 수정:", value=ai_comment, height=150)
+        
+        # 구글 시트로 업데이트 실행 버튼
+        if st.button(f"🚀 {selected_media} 데이터를 구글 시트에 업데이트"):
+            if doc is not None:
+                with st.spinner("구글 시트에 수식 입력 및 데이터 전송 중..."):
+                    summary_sheet = doc.worksheet("Summary")
+                    
+                    # 🔍 기존 시트의 구조에 맞춰 '운영 매체' 열에서 매체 위치 탐색
+                    # 대략 E열에 매체명이 있다고 가정한 로직 예시 (실제 구조에 따라 행 번호 매칭 조정 가능)
+                    media_cells = summary_sheet.findall(selected_media)
+                    
+                    if media_cells:
+                        target_row = media_cells[0].row
+                        
+                        # 값 직접 대입 (소진 광고비 - K열 가정)
+                        summary_sheet.update_cell(target_row, 11, int(spend_val)) # K열에 소진광고비 입력
+                        
+                        # 수식 대입 (잔액 - L열 가정 / 예산[F열] - 소진광고비[K열])
+                        summary_sheet.update_cell(target_row, 12, f"=F{target_row}-K{target_row}") 
+                        
+                        # 일자별 목표 예산 수식 대입 (J열 가정 / 예산[F열] / 운영기간[D12])
+                        summary_sheet.update_cell(target_row, 10, f"=F{target_row}/$D$12")
+                        
+                        # 우측 코멘트 열에 AI가 만든 인사이트 기입 (O열 가정)
+                        summary_sheet.update_cell(target_row, 15, edited_comment)
+                        
+                        st.success(f"🎉 구글 시트 [{target_row}번째 행]에 데이터와 자동 수식, 코멘트 기입이 완료되었습니다!")
+                    else:
+                        st.error(f"구글 시트에서 '{selected_media}' 항목을 찾지 못했습니다. 매체 명칭이 일치하는지 확인하세요.")
+            else:
+                st.error("구글 시트 연결이 설정되지 않아 업로드가 불가능합니다.")
+else:
+    with col1:
+        st.info("💡 사이드바에서 분석할 매체를 선택하고 RAW 데이터 파일을 업로드해 주세요.")
+    with col2:
+        st.write("파일이 업로드되면 이 자리에 AI가 제안하는 일일 리포트용 코멘트가 나타납니다.")
