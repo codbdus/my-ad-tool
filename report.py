@@ -79,11 +79,4 @@ for c in df.columns:
     if not f_imp and c in imp_keys: f_imp = c
     if not f_clk and c in clk_keys: f_clk = c
     if not f_cost and c in cost_keys: f_cost = c
-    if '캠페인' in c or 'Campaign' in c or '광고상품' in c: f_camp = c
-
-def strict_clean(series):
-    if series is None:
-        return pd.Series(0, index=df.index)
-    s_txt = series.astype(str)
-    v = s_txt.str.replace(r'[^\d]', '', regex=True)
-    v = v.replace(['', 'nan'], '0
+    if '캠페인' in c or 'Campaign' in c or '광고상품
