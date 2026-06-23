@@ -5,136 +5,66 @@ import hmac
 import hashlib
 import base64
 import requests
-from io import BytesIO
+import json
 
-# 웹사이트 기본 설정
-st.set_page_config(page_title="네이버 검색광고 대시보드 최종형", layout="wide")
-st.title("🚀 네이버 검색광고 공식 API 연동 모니터링 도구")
-st.markdown("네이버 공식 API를 연결하여 차단 없이 **실시간 키워드 데이터 및 대시보드**를 조회합니다.")
+# 웹사이트 설정
+st.set_page_config(page_title="네이버 키워드 조회 도구", layout="wide")
+st.title("🚀 네이버 검색광고 키워드 조회 도구")
 
-# 사이드바 설정창
+# 사이드바
 with st.sidebar:
-    st.header("🔐 네이버 API 인증 정보")
-    st.caption("네이버 검색광고 시스템 [도구 > SA API 사용 관리]에서 확인 가능합니다.")
-    
-    cust_id = st.text_input("1. CUSTOMER_ID (고객 ID)", type="password")
-    api_key = st.text_input("2. API_KEY (라이선스 키)", type="password")
-    secret_key = st.text_input("3. SECRET_KEY (비밀키)", type="password")
-    
-    st.divider()
-    st.header("⚙️ 조회 설정")
-    input_keywords = st.text_input("분석할 키워드 (쉼표로 구분)", "뷰티디바이스, 수분크림")
-    run_button = st.button("📊 실시간 API 데이터 가져오기")
+    cust_id = st.text_input("CUSTOMER_ID", type="password")
+    api_key = st.text_input("API_KEY", type="password")
+    secret_key = st.text_input("SECRET_KEY", type="password")
 
-# [🔥 초정밀 수정] 네이버 공식 문서 규격서에 따른 서명 생성
-def make_signature(timestamp, method, uri, secret_key):
-    # URI 스펙에 포함되는 경로만 정확히 결합해야 합니다.
-    message = f"{timestamp}\n{method}\n{uri}"
-    secret_bytes = bytes(secret_key.strip(), 'utf-8')
-    message_bytes = bytes(message, 'utf-8')
-    
-    signing_mac = hmac.new(secret_bytes, message_bytes, digestmod=hashlib.sha256)
-    return base64.b64encode(signing_mac.digest()).decode('utf-8')
+# 서명 생성 함수 (공식 규격)
+def get_signature(timestamp, method, uri, secret_key):
+    message = f"{timestamp}.{method}.{uri}"
+    hash = hmac.new(bytes(secret_key, "utf-8"), bytes(message, "utf-8"), hashlib.sha256)
+    return base64.b64encode(hash.digest()).decode("utf-8")
 
-# 네이버 키워드 데이터 조회 함수
-def get_keyword_stats(keywords_list, cust_id, api_key, secret_key):
-    # [🎯 핵심 변경] 네이버 게이트웨이 라우팅을 통과하기 위한 정확한 내부 호출 경로 지정
-    pure_uri = "/keywordstats"
-    method = "GET"
-    request_url = f"https://api.naver.com{pure_uri}"
+# API 호출 함수
+def fetch_naver_keywords(keywords, cust_id, api_key, secret_key):
+    base_url = "https://api.searchad.naver.com"
+    uri = "/keywordstool"
+    method = "POST"
+    timestamp = str(int(time.time() * 1000))
     
-    clean_cust_id = str(cust_id).strip()
-    clean_api_key = str(api_key).strip()
-    clean_secret_key = str(secret_key).strip()
+    signature = get_signature(timestamp, method, uri, secret_key)
     
-    # 13자리 자바 표준 밀리초 타임스탬프
-    current_timestamp = str(int(time.time() * 1000))
-    
-    # 서명 데이터 생성
-    signature = make_signature(current_timestamp, method, pure_uri, clean_secret_key)
-    
-    # 헤더 맵핑
     headers = {
-        "X-Timestamp": current_timestamp,
-        "X-API-KEY": clean_api_key,
-        "X-Customer": clean_cust_id,
+        "X-Timestamp": timestamp,
+        "X-API-KEY": api_key,
+        "X-Customer": cust_id,
         "X-Signature": signature,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json; charset=UTF-8"
     }
     
-    kw_query = ",".join([k.strip() for k in keywords_list])
-    params = {
-        "keywords": kw_query
+    # 키워드 도구는 최대 5개까지 조회 가능
+    payload = {
+        "hintKeywords": keywords[:5], 
+        "siteId": None,
+        "bizChannel": None
     }
     
-    try:
-        # requests 모듈을 이용한 게이트웨이 호출
-        res = requests.get(request_url, headers=headers, params=params, timeout=10)
-        
-        if res.status_code == 200:
-            data = res.json()
-            return pd.DataFrame(data.get("keywordList", []))
-        else:
-            st.error(f"❌ 네이버 API 통신 실패 (에러코드: {res.status_code})")
-            st.warning("⚠️ 서버 응답 원본 확인:")
-            st.code(f"Status Code: {res.status_code}\nResponse Text: {res.text if res.text else '네이버 보안 필터가 암호화 주소 형식을 거절했습니다. URL 경로를 재확인해 주세요.'}")
-            return None
-    except Exception as e:
-        st.error(f"⚠️ 연결 중 오류 발생: {e}")
+    response = requests.post(base_url + uri, headers=headers, data=json.dumps(payload))
+    
+    if response.status_code == 200:
+        return response.json().get("keywordList", [])
+    else:
+        st.error(f"오류 발생: {response.status_code}")
+        st.write(response.text)
         return None
 
-# 실행 버튼 클릭 시
-if run_button:
-    if not (cust_id and api_key and secret_key):
-        st.error("⚠️ 네이버 API 인증 정보 3가지를 모두 입력해 주세요!")
+# 메인 실행부
+input_keywords = st.text_input("분석할 키워드 (쉼표로 구분, 최대 5개)", "뷰티디바이스, 수분크림")
+if st.button("조회 시작"):
+    if not all([cust_id, api_key, secret_key]):
+        st.error("API 정보를 입력해주세요.")
     else:
         kw_list = [k.strip() for k in input_keywords.split(",")]
+        data = fetch_naver_keywords(kw_list, cust_id, api_key, secret_key)
         
-        with st.spinner("🔄 네이버 공식 광고 서버에서 데이터를 안전하게 가져오는 중..."):
-            df_result = get_keyword_stats(kw_list, cust_id, api_key, secret_key)
-            
-        if df_result is not None and not df_result.empty:
-            df_result = df_result.rename(columns={
-                'relKeyword': '키워드',
-                'monthlyPcQcCnt': '월간 PC 검색수',
-                'monthlyMobileQcCnt': '월간 모바일 검색수',
-                'monthlyAvePcClkCnt': '월간 PC 평균 클릭수',
-                'monthlyAveMobileClkCnt': '월간 모바일 평균 클릭수',
-                'monthlyAvePcCtr': 'PC 평균 CTR (%)',
-                'monthlyAveMobileCtr': '모바일 평균 CTR (%)'
-            })
-            
-            st.subheader("📊 실시간 매체 데이터 대시보드")
-            st.dataframe(df_result, use_container_width=True)
-            
-            # 타겟팅 가이드
-            st.subheader("💡 채널별 타겟팅 가이드")
-            for index, row in df_result.iterrows():
-                kw = row["키워드"]
-                try:
-                    pc_search = int(str(row['월간 PC 검색수']).replace('<', '').replace(',', '').strip())
-                except:
-                    pc_search = 0
-                try:
-                    mo_search = int(str(row['월간 모바일 검색수']).replace('<', '').replace(',', '').strip())
-                except:
-                    mo_search = 0
-                
-                st.markdown(f"**📍 [{kw}] 매체 가치 분석**")
-                if mo_search > pc_search * 3:
-                    st.info(f"📱 모바일 검색 비중이 PC보다 **압도적으로 높습니다** (모바일 {mo_search:,}건 / PC {pc_search:,}건). 광고 예산 배정을 모바일에 80% 이상 집중하세요.")
-                else:
-                    st.success(f"🖥️ PC와 모바일 밸런스가 좋습니다 (모바일 {mo_search:,}건 / PC {pc_search:,}건). 두 매체 모두 모니터링이 필요합니다.")
-                st.write("---")
-                
-            # 엑셀 다운로드
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df_result.to_excel(writer, sheet_name='네이버_API_리포트', index=False)
-                
-            st.download_button(
-                label="📄 API 원본 리포트 다운로드",
-                data=output.getvalue(),
-                file_name=f"naver_api_report_{pd.Timestamp.now().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.ms-excel"
-            )
+        if data:
+            df = pd.DataFrame(data)
+            st.dataframe(df)
