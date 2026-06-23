@@ -34,7 +34,6 @@ if uploaded_file is None:
 df = None
 f_name = uploaded_file.name
 
-# [대폭 수정] 파일 파싱의 모든 예외를 방어하는 마스터 리더 엔진
 if f_name.endswith('.xlsx'):
     df = pd.read_excel(uploaded_file)
 else:
@@ -44,7 +43,6 @@ else:
             text_bytes = uploaded_file.read()
             text_str = text_bytes.decode(enc)
             
-            # csv sniffer를 사용해 공백/탭/쉼표를 자동으로 완전히 분석
             dialect = csv.Sniffer().sniff(text_str[:4000])
             df = pd.read_csv(
                 io.StringIO(text_str),
@@ -55,7 +53,6 @@ else:
                 break
         except:
             try:
-                # 스니퍼 실패 시 기본 콤마(,) 및 탭(\t) 강제 분리 2차 방어선
                 uploaded_file.seek(0)
                 df = pd.read_csv(
                     uploaded_file, 
@@ -72,7 +69,6 @@ if df is None or df.empty:
     st.error("⚠️ 파일 데이터를 읽을 수 없습니다.")
     st.stop()
 
-# 모든 컬럼명 정제
 df.columns = [str(c).strip() for c in df.columns]
 
 st.subheader(f"📝 {media} RAW 데이터 확인")
@@ -97,22 +93,4 @@ camp_keywords = ['캠페인', 'Campaign', '광고상품', '광고그룹']
 for c in df.columns:
     if not f_imp and c in imp_keys: f_imp = c
     if not f_clk and c in clk_keys: f_clk = c
-    if not f_cost and c in cost_keys: f_cost = c
-    for key in camp_keywords:
-        if key in c: f_camp = c
-
-def strict_clean(series):
-    if series is None:
-        return pd.Series(0, index=df.index)
-    s_txt = series.astype(str)
-    v = s_txt.str.replace(r'[^\d]', '', regex=True)
-    return pd.to_numeric(v, errors='coerce').fillna(0)
-
-calc_df = df.copy()
-if f_imp: calc_df[f_imp] = strict_clean(df[f_imp])
-if f_clk: calc_df[f_clk] = strict_clean(df[f_clk])
-if f_cost: calc_df[f_cost] = strict_clean(df[f_cost])
-
-cols = [f_camp]
-for f in [f_imp, f_clk, f_cost]:
-    if
+    if not
